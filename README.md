@@ -10,12 +10,12 @@ Issued invoices can be created, listed and cancelled by a signed-in user. There 
 
 ## Install
 
-Three ways, all from the same [releases](https://github.com/jgermade/vericounts/releases): a static binary for Linux (x86_64 and aarch64) with the web client, a Docker image and a Helm chart. Each needs PostgreSQL and, in production, an SMTP server and HTTPS in front (passkeys need a domain name).
+Three ways, all from the same [releases](https://github.com/jgermade/vericount/releases): a static binary for Linux (x86_64 and aarch64) with the web client, a Docker image and a Helm chart. Each needs PostgreSQL and, in production, an SMTP server and HTTPS in front (passkeys need a domain name).
 
 ### One line, on a Linux server with systemd
 
 ```bash
-curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
+curl -fsSL https://github.com/jgermade/vericount/releases/latest/download/setup.sh | sudo bash
 ```
 
 A wizard (in Spanish) offers to **install** or, if vericount is already there, to **reinstall/update** or **uninstall**:
@@ -49,7 +49,7 @@ The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT cer
 The chart in [`charts/vericount`](charts/vericount) (also attached to each release) runs one replica, with the migrations in an init container. PostgreSQL is external, e.g. an operator such as PGO with pgBackRest:
 
 ```bash
-helm install vericount https://github.com/jgermade/vericounts/releases/download/vX.Y.Z/vericount-X.Y.Z.tgz \
+helm install vericount https://github.com/jgermade/vericount/releases/download/vX.Y.Z/vericount-X.Y.Z.tgz \
   --set publicUrl=https://books.example.com \
   --set database.url=postgres://vericount:...@db/vericount \
   --set database.migrationUrl=postgres://vericount_owner:...@db/vericount \

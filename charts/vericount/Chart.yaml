@@ -2,10 +2,10 @@ apiVersion: v2
 name: vericount
 description: Bookkeeping for a Spanish SL with Veri*factu compliance
 type: application
-home: https://github.com/jgermade/vericounts
+home: https://github.com/jgermade/vericount
 sources:
-  - https://github.com/jgermade/vericounts
-icon: https://raw.githubusercontent.com/jgermade/vericounts/main/web/public/logo.svg
+  - https://github.com/jgermade/vericount
+icon: https://raw.githubusercontent.com/jgermade/vericount/main/web/public/logo.svg
 # Both are set by scripts/version.sh on every release.
 version: 0.1.0
 appVersion: "0.1.0"

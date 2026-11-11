@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vericount installer for a Linux server with systemd (x86_64 or aarch64).
 #
-#   curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
+#   curl -fsSL https://github.com/jgermade/vericount/releases/latest/download/setup.sh | sudo bash
 #
 # Without arguments it runs a wizard: install, or, when vericount is
 # already installed, reinstall/update or uninstall. It can also run
@@ -27,7 +27,7 @@ set -euo pipefail
 # whatever the caller's umask.
 umask 022
 
-REPO=${VERICOUNT_REPO:-jgermade/vericounts}
+REPO=${VERICOUNT_REPO:-jgermade/vericount}
 PREFIX=/opt/vericount
 CONF_DIR=/etc/vericount
 ENV_FILE=$CONF_DIR/vericount.env
