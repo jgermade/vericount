@@ -42,3 +42,12 @@ Workflow:
 1. Before starting a task, read the open `*.WIP.md` records and any `*.completed.md` records related to it.
 2. While working, append decisions, progress, open questions and next steps to the matching WIP record, or create a new one.
 3. Start each appended entry with a heading that includes the date, e.g. `## 2026-11-11: Short title`.
+
+## Frontend
+
+The web client (`web/`) is written with jq79 and TypeScript:
+
+- Components are jq79 single-file `.html` components with `<script :setup lang="ts">`.
+- Everything else is `.ts`; no plain JavaScript sources.
+- Components are precompiled with the jq79 Vite plugin (`safeEval: true`), so the client runs under the strict CSP without `unsafe-eval`.
+- `npm run build` must pass, including the type check. The jq79 plugin strips the types of component scripts but does not check them; `tsc` only checks the `.ts` files.

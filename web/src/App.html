@@ -1,12 +1,25 @@
-<script :setup="{ api }">
+<script :setup="{ api }: { api: Api }" lang="ts">
+  import type { Api, ApiError } from "./api"
+  import type {
+    Amount, ChainReport, Invoice, InvoiceInput, InvoicePreview, InvoiceSummary, LineInput,
+  } from "./types"
+
+  interface Form {
+    series: string
+    recipient_name: string
+    recipient_nif: string
+    description: string
+    lines: LineInput[]
+  }
+
   const VAT_RATES = ["21", "10", "4"]
   const money = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" })
   // Amounts are decimal strings; they are only turned into numbers to be shown.
-  const eur = amount => money.format(Number(amount))
-  const shortHash = hash => (hash ? `${hash.slice(0, 12)}…` : "(first record)")
+  const eur = (amount: Amount) => money.format(Number(amount))
+  const shortHash = (hash: string) => (hash ? `${hash.slice(0, 12)}…` : "(first record)")
 
-  const emptyLine = () => ({ description: "", quantity: "1", unit_price: "", vat_rate: "21" })
-  const emptyForm = () => ({
+  const emptyLine = (): LineInput => ({ description: "", quantity: "1", unit_price: "", vat_rate: "21" })
+  const emptyForm = (): Form => ({
     series: `A${new Date().getFullYear()}`,
     recipient_name: "",
     recipient_nif: "",
@@ -15,27 +28,28 @@
   })
 
   let view = "list"
-  let invoices = []
-  let invoice = null
-  let form = emptyForm()
-  let preview = null
-  let chain = null
+  let invoices: InvoiceSummary[] = []
+  let invoice: Invoice | null = null
+  let form: Form = emptyForm()
+  let preview: InvoicePreview | null = null
+  let chain: ChainReport | null = null
   let error = ""
   let busy = false
 
-  const run = async action => {
+  const run = async (action: () => Promise<void>) => {
     busy = true
     error = ""
     try {
       await action()
     } catch (e) {
-      error = e.field ? `${e.field}: ${e.message}` : e.message
+      const { field, message } = e as ApiError
+      error = field ? `${field}: ${message}` : message
     } finally {
       busy = false
     }
   }
 
-  const payload = () => ({
+  const payload = (): InvoiceInput => ({
     series: form.series.trim().toUpperCase(),
     recipient: { name: form.recipient_name, nif: form.recipient_nif },
     description: form.description,
@@ -57,7 +71,7 @@
     preview = null
     view = "new"
   }
-  const showInvoice = id => run(async () => {
+  const showInvoice = (id: number) => run(async () => {
     invoice = await api.getInvoice(id)
     view = "detail"
   })
@@ -65,11 +79,11 @@
     form.lines = [...form.lines, emptyLine()]
     preview = null
   }
-  const removeLine = index => {
+  const removeLine = (index: number) => {
     form.lines = form.lines.filter((_, i) => i !== index)
     preview = null
   }
-  const setField = (target, name, value) => {
+  const setField = <T, K extends keyof T>(target: T, name: K, value: T[K]) => {
     target[name] = value
     preview = null
   }
@@ -83,9 +97,11 @@
     view = "detail"
   })
   const cancel = () => {
-    if (!window.confirm(`Cancel invoice ${invoice.series_number}? This cannot be undone.`)) return
+    const current = invoice
+    if (!current) return
+    if (!window.confirm(`Cancel invoice ${current.series_number}? This cannot be undone.`)) return
     run(async () => {
-      invoice = await api.cancelInvoice(invoice.id)
+      invoice = await api.cancelInvoice(current.id)
     })
   }
 

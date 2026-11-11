@@ -45,4 +45,6 @@ Configuration (environment variables):
 
 - `crates/core`: domain logic without I/O (record hash, invoice totals, QR URL).
 - `crates/server`: Axum HTTP server, API, database access, migrations and security headers.
-- `web`: web client built with jq79 and Vite; components are precompiled so it runs under a strict CSP.
+- `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
+- `crates/aeat-mock`: mock of the AEAT record submission service, for tests and local development.
+- `aeat/schemas`: official AEAT WSDL and XSD files.
