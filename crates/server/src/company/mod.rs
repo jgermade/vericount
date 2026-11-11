@@ -3,4 +3,5 @@
 //!
 //! Tables: `company`, `series`.
 
+pub mod api;
 pub mod store;

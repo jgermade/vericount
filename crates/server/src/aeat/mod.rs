@@ -10,6 +10,7 @@
 //! Tables: `aeat_submissions`, `aeat_submission_records`, `aeat_responses`,
 //! `aeat_record_results`, `aeat_certificate`.
 
+pub mod api;
 pub mod certificate;
 pub mod client;
 pub mod service;

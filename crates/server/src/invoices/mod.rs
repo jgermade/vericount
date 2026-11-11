@@ -5,4 +5,5 @@
 //! Everything here is insert-only. Tables: `invoices`, `invoice_lines`,
 //! `invoice_taxes`, `billing_records`, `live_mode`.
 
+pub mod api;
 pub mod store;

@@ -8,6 +8,7 @@
 //! Tables: `users`, `sessions`, `login_codes`, `passkeys`,
 //! `webauthn_ceremonies`.
 
+pub mod api;
 pub mod passkeys;
 pub mod sessions;
 pub mod users;

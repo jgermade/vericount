@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 use vericount_server::{
     access::users,
     aeat::{
-        service::{self as aeat_service, AeatService},
+        service::{self, AeatService},
         submission::{self, RunOutcome},
     },
     company,
@@ -161,7 +161,7 @@ async fn serve() -> Result<(), AnyError> {
             );
         }
     }
-    let practice_endpoint = aeat_service::start_practice_mock(&pool).await?;
+    let practice_endpoint = service::start_practice_mock(&pool).await?;
     let aeat = AeatService::new(
         AeatSettings::from_env(config.aeat_environment)?,
         Some(practice_endpoint),

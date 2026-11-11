@@ -21,7 +21,7 @@ use vericount_aeat_mock::{Mock, SERVICE_PATH};
 use vericount_core::aeat::Party;
 use vericount_server::{
     aeat::{
-        service::{self as aeat_service, AeatService},
+        service::{self, AeatService},
         submission,
     },
     company,
@@ -116,7 +116,7 @@ async fn start_mock() -> (Mock, String) {
 async fn app(pool: &PgPool, settings: AeatSettings) -> (AppState, Router) {
     common::sign_in(pool).await;
     common::seed(pool).await;
-    let practice = aeat_service::start_practice_mock(pool).await.unwrap();
+    let practice = service::start_practice_mock(pool).await.unwrap();
     let mut state = common::state(pool.clone());
     state.aeat = Arc::new(AeatService::new(settings, Some(practice)));
     state.aeat.reload(pool).await.unwrap();
@@ -178,7 +178,7 @@ async fn the_practice_mock_continues_after_a_restart(pool: PgPool) {
     assert_eq!(send(&state).await, "accepted");
 
     // A new server: a new mock, which learns what the old one received.
-    let practice = aeat_service::start_practice_mock(&pool).await.unwrap();
+    let practice = service::start_practice_mock(&pool).await.unwrap();
     let restarted = AeatService::new(AeatSettings::test(), Some(practice));
     restarted.reload(&pool).await.unwrap();
     let mut state = state.clone();
