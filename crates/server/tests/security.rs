@@ -1,24 +1,21 @@
 //! Tests for the security headers and for CSP compliance of the web client.
 
+mod common;
+
 use std::{fs, path::PathBuf};
 
-use axum::{
-    body::Body,
-    http::{HeaderMap, Request, StatusCode},
-};
-use tower::ServiceExt;
-use vericounts_server::{app, security::CONTENT_SECURITY_POLICY_VALUE};
+use axum::http::{HeaderMap, StatusCode};
+use common::web_dir;
+use sqlx::postgres::PgPoolOptions;
+use vericounts_server::security::CONTENT_SECURITY_POLICY_VALUE;
 
-fn web_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web")
-}
-
+/// These tests never reach the database, so the pool is never connected.
 async fn get(path: &str) -> (StatusCode, HeaderMap) {
-    let response = app(web_dir())
-        .oneshot(Request::get(path).body(Body::empty()).unwrap())
-        .await
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://unused@127.0.0.1:1/unused")
         .unwrap();
-    (response.status(), response.headers().clone())
+    let response = common::get(&common::app(pool), path).await;
+    (response.status, response.headers)
 }
 
 fn directive<'a>(csp: &'a str, name: &str) -> Option<&'a str> {
@@ -59,6 +56,7 @@ async fn security_headers_are_set_on_every_response() {
         ("/healthz", StatusCode::OK),
         ("/app.js", StatusCode::OK),
         ("/does-not-exist", StatusCode::NOT_FOUND),
+        ("/api/does-not-exist", StatusCode::NOT_FOUND),
     ] {
         let (got, headers) = get(path).await;
         assert_eq!(got, status, "{path}");
