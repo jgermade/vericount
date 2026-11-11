@@ -1,7 +1,7 @@
 // User interface texts. The interface is in Spanish; identifiers and
 // comments stay in English.
 
-import type { AeatState } from "../types"
+import type { AeatState, LiveBlocker } from "../types"
 
 export const es = {
   appName: "vericount",
@@ -60,6 +60,7 @@ export const es = {
     legend: "Factura verificable en la sede electrónica de la AEAT",
     brand: "VERI*FACTU",
     cancelled: "ANULADA",
+    practice: "FACTURA DE PRUEBA, SIN VALIDEZ",
   },
   list: {
     newInvoice: "Nueva factura",
@@ -68,7 +69,10 @@ export const es = {
     chainOk: (records: number) => `${records} registros, cadena verificada.`,
     chainBroken: (recordId: number) =>
       `La cadena de registros está rota en el registro ${recordId}. No emitas facturas hasta revisarlo.`,
-    aeatDisabled: "El envío a la AEAT está desactivado.",
+    aeatDisabled: "El envío está parado: falta el certificado. Súbelo en Ajustes.",
+    practice:
+      "Modo de prueba: estas facturas no son reales. Sus registros se envían a una simulación de la AEAT, no a la AEAT.",
+    practiceTag: "de prueba",
     aeatPending: (count: number) => `${count} registros pendientes de enviar a la AEAT.`,
     aeatRejected: (count: number) => `${count} registros rechazados por la AEAT.`,
     aeatLastError: (error: string) => `Último intento de envío: ${error}`,
@@ -166,15 +170,45 @@ export const es = {
     companyMissing: "Antes de facturar, rellena los datos de la empresa. Aparecerán en todas las facturas.",
     companyName: "Razón social",
     nif: "NIF",
-    nifLocked: "El NIF no se puede cambiar cuando ya hay facturas.",
+    nifLocked: "En modo real el NIF ya no se puede cambiar.",
     address: "Domicilio",
     postalCode: "Código postal",
     city: "Población",
     saved: "Datos guardados.",
     aeatTitle: "Envío a la AEAT",
-    aeatEnabled: "El envío automático está activado.",
-    aeatDisabled: "El envío automático está desactivado en el servidor.",
-    noCertificate: "No hay certificado configurado.",
+    practiceMode:
+      "Estás en modo de prueba. Puedes emitir facturas para practicar: no son reales y sus registros van a una simulación de la AEAT dentro de vericount.",
+    liveMode: (environment: "test" | "production") =>
+      environment === "production"
+        ? "Modo real: las facturas son reales y sus registros se envían a la AEAT."
+        : "Modo real contra el entorno de pruebas de la AEAT: los registros se envían a la AEAT, pero no tienen validez.",
+    aeatStopped: "El envío está parado hasta que subas un certificado.",
+    noCertificate: "No hay ningún certificado.",
+    certificateTitle: "Certificado",
+    certificateHelp:
+      "El certificado de la empresa, o el de una persona apoderada por la empresa ante la AEAT. Sube el archivo .p12 o .pfx con su contraseña. Se guarda cifrado.",
+    certificateFile: "Archivo del certificado (.p12, .pfx o .pem)",
+    certificatePassword: "Contraseña del certificado",
+    uploadCertificate: "Subir certificado",
+    replaceCertificate: "Sustituir certificado",
+    removeCertificate: "Quitar certificado",
+    certificateUploaded: "Certificado guardado.",
+    certificateUploadUnavailable:
+      "El servidor no puede guardar certificados: falta la clave VERICOUNT_SECRET_KEY en su configuración.",
+    liveTitle: "Pasar a modo real",
+    liveHelp:
+      "Cuando actives el modo real, las facturas serán reales y se enviarán a la AEAT con el certificado. La numeración empieza de nuevo y las facturas de prueba dejan de mostrarse. No se puede volver al modo de prueba.",
+    liveBlocker: {
+      certificate_missing: "Falta subir un certificado.",
+      certificate_expired: "El certificado ha caducado: sube uno vigente.",
+      producer_missing:
+        "Falta configurar en el servidor el productor del software (VERICOUNT_SOFTWARE_PRODUCER_NAME y VERICOUNT_SOFTWARE_PRODUCER_NIF).",
+    } satisfies Record<LiveBlocker, string>,
+    goLive: "Activar modo real",
+    confirmGoLive:
+      "¿Activar el modo real? Desde ahora cada factura será real y se enviará a la AEAT. No se puede deshacer.",
+    confirmGoLiveButton: "Sí, activar el modo real",
+    keepPractising: "Seguir en modo de prueba",
     certificate: (subject: string, nif: string) => `Certificado de ${subject} (NIF ${nif}).`,
     certificateExpires: (date: string) => `Caduca el ${date}.`,
     certificateOwn: "Es un certificado de la propia empresa.",
@@ -216,7 +250,14 @@ export const es = {
     unauthenticated: "La sesión ha caducado. Vuelve a entrar.",
     already_cancelled: "La factura ya está anulada.",
     company_missing: "Faltan los datos de la empresa. Rellénalos en Ajustes.",
-    nif_locked: "El NIF no se puede cambiar cuando ya hay facturas.",
+    nif_locked: "En modo real el NIF ya no se puede cambiar.",
+    secret_key_missing: "El servidor no puede guardar certificados: falta la clave VERICOUNT_SECRET_KEY.",
+    certificate_unreadable: "No se puede leer el certificado. Revisa el archivo y la contraseña.",
+    certificate_expired: "El certificado ha caducado.",
+    certificate_missing: "Antes, sube un certificado.",
+    producer_missing: "Falta configurar en el servidor el productor del software.",
+    already_live: "El modo real ya está activado.",
+    aeat_disabled: "El envío está parado.",
     nif_exists: "Ya hay otro contacto con ese NIF.",
     series_exists: "Esa serie ya existe.",
     nothing_to_correct: "Esta factura no tiene ningún registro rechazado.",

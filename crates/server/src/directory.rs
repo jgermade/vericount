@@ -77,7 +77,7 @@ pub async fn issuer(pool: &PgPool) -> Result<Issuer, StoreError> {
 }
 
 /// Creates or updates the company. The NIF identifies the chain of
-/// records, so it cannot change once a record exists.
+/// records, so it cannot change once live mode is on.
 pub async fn save_company(pool: &PgPool, company: Company) -> Result<Company, StoreError> {
     let company = company.validate()?;
     let mut tx = pool.begin().await?;
@@ -85,13 +85,16 @@ pub async fn save_company(pool: &PgPool, company: Company) -> Result<Company, St
         .fetch_optional(&mut *tx)
         .await?;
     if current.as_ref().is_some_and(|nif| *nif != company.nif) {
-        let has_records: bool = sqlx::query_scalar("SELECT EXISTS (SELECT FROM billing_records)")
-            .fetch_one(&mut *tx)
-            .await?;
-        if has_records {
+        // Practice invoices do not lock it: they are not real.
+        let locked: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT FROM live_mode) OR EXISTS (SELECT FROM billing_records WHERE live)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if locked {
             return Err(StoreError::Conflict(
                 "nif_locked",
-                "the NIF cannot change once invoices exist",
+                "the NIF cannot change in live mode",
             ));
         }
     }

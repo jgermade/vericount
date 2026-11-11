@@ -3,6 +3,9 @@
 //! Records are only ever inserted. Every insertion into an issuer's chain
 //! happens in a transaction that first takes an advisory lock on that
 //! chain, so invoice numbers and the hash chain never fork.
+//!
+//! Practice and live invoices are kept apart: each mode has its own
+//! numbering and its own chain, and only the current mode's are shown.
 
 use chrono::{DateTime, NaiveDate};
 use chrono_tz::Tz;
@@ -95,6 +98,8 @@ pub struct Invoice {
     pub total_tax: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
     pub total_amount: Decimal,
+    /// False for a practice invoice, which is not real.
+    pub live: bool,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -145,11 +150,46 @@ async fn lock_chain(conn: &mut PgConnection, issuer_nif: &str) -> Result<(), sql
     Ok(())
 }
 
-async fn last_hash(conn: &mut PgConnection, issuer_nif: &str) -> Result<String, sqlx::Error> {
+/// Whether live mode is on. Until then, everything is practice.
+pub async fn is_live(conn: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT FROM live_mode)")
+        .fetch_one(conn)
+        .await
+}
+
+/// Turns live mode on, for good. Returns false if it already was.
+pub async fn activate_live_mode(
+    pool: &PgPool,
+    issuer_nif: &str,
+    user_id: i64,
+) -> Result<bool, StoreError> {
+    let mut tx = pool.begin().await?;
+    // No invoice is being issued meanwhile in the mode that ends.
+    lock_chain(&mut tx, issuer_nif).await?;
+    let inserted = sqlx::query(
+        "INSERT INTO live_mode (activated_by, issuer_nif) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(issuer_nif)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+    Ok(inserted == 1)
+}
+
+async fn last_hash(
+    conn: &mut PgConnection,
+    issuer_nif: &str,
+    live: bool,
+) -> Result<String, sqlx::Error> {
     let hash: Option<String> = sqlx::query_scalar(
-        "SELECT hash FROM billing_records WHERE issuer_nif = $1 ORDER BY id DESC LIMIT 1",
+        "SELECT hash FROM billing_records WHERE issuer_nif = $1 AND live = $2
+         ORDER BY id DESC LIMIT 1",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_optional(conn)
     .await?;
     Ok(hash.unwrap_or_default())
@@ -170,6 +210,7 @@ pub async fn create_invoice(
 
     let mut tx = pool.begin().await?;
     lock_chain(&mut tx, &issuer.nif).await?;
+    let live = is_live(&mut *tx).await?;
 
     let series_active: Option<bool> =
         sqlx::query_scalar("SELECT active FROM series WHERE code = $1")
@@ -196,10 +237,12 @@ pub async fn create_invoice(
     let recipient_address = crate::directory::full_address(&address, &postal_code, &city);
 
     let (last_number, last_date): (Option<i32>, Option<NaiveDate>) = sqlx::query_as(
-        "SELECT max(number), max(issue_date) FROM invoices WHERE issuer_nif = $1 AND series = $2",
+        "SELECT max(number), max(issue_date) FROM invoices
+         WHERE issuer_nif = $1 AND series = $2 AND live = $3",
     )
     .bind(&issuer.nif)
     .bind(&new.series)
+    .bind(live)
     .fetch_one(&mut *tx)
     .await?;
     if last_date.is_some_and(|last| issue_date < last) {
@@ -216,8 +259,9 @@ pub async fn create_invoice(
     let invoice_id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (issuer_nif, issuer_name, series, number, series_number, issue_date,
              invoice_type, recipient_name, recipient_nif, description,
-             total_base, total_tax, total_amount, issuer_address, recipient_address, contact_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+             total_base, total_tax, total_amount, issuer_address, recipient_address, contact_id,
+             live)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id",
     )
     .bind(&issuer.nif)
@@ -236,6 +280,7 @@ pub async fn create_invoice(
     .bind(&issuer.address)
     .bind(&recipient_address)
     .bind(new.contact_id)
+    .bind(live)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -268,7 +313,7 @@ pub async fn create_invoice(
         .await?;
     }
 
-    let previous_hash = last_hash(&mut tx, &issuer.nif).await?;
+    let previous_hash = last_hash(&mut tx, &issuer.nif, live).await?;
     let generated_at = hash::format_generated_at(&now);
     let record_hash = hash::registration_hash(&RegistrationFields {
         issuer_nif: &issuer.nif,
@@ -282,8 +327,9 @@ pub async fn create_invoice(
     });
     sqlx::query(
         "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
-             issue_date, invoice_type, total_tax, total_amount, previous_hash, hash, generated_at)
-         VALUES ($1, 'registration', $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+             issue_date, invoice_type, total_tax, total_amount, previous_hash, hash, generated_at,
+             live)
+         VALUES ($1, 'registration', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
     )
     .bind(invoice_id)
     .bind(&issuer.nif)
@@ -295,6 +341,7 @@ pub async fn create_invoice(
     .bind(&previous_hash)
     .bind(&record_hash)
     .bind(&generated_at)
+    .bind(live)
     .execute(&mut *tx)
     .await?;
 
@@ -311,15 +358,17 @@ pub async fn cancel_invoice(
 ) -> Result<(), StoreError> {
     let mut tx = pool.begin().await?;
     lock_chain(&mut tx, &issuer.nif).await?;
+    let live = is_live(&mut *tx).await?;
 
     let invoice: Option<(String, NaiveDate, bool)> = sqlx::query_as(
         "SELECT series_number, issue_date,
                 EXISTS (SELECT FROM billing_records r
                         WHERE r.invoice_id = i.id AND r.record_type = 'cancellation')
-         FROM invoices i WHERE id = $1 AND issuer_nif = $2",
+         FROM invoices i WHERE id = $1 AND issuer_nif = $2 AND live = $3",
     )
     .bind(invoice_id)
     .bind(&issuer.nif)
+    .bind(live)
     .fetch_optional(&mut *tx)
     .await?;
     let (series_number, issue_date, cancelled) = invoice.ok_or(StoreError::NotFound)?;
@@ -327,7 +376,7 @@ pub async fn cancel_invoice(
         return Err(StoreError::AlreadyCancelled);
     }
 
-    let previous_hash = last_hash(&mut tx, &issuer.nif).await?;
+    let previous_hash = last_hash(&mut tx, &issuer.nif, live).await?;
     let generated_at = hash::format_generated_at(&now);
     let record_hash = hash::cancellation_hash(&CancellationFields {
         issuer_nif: &issuer.nif,
@@ -338,8 +387,8 @@ pub async fn cancel_invoice(
     });
     sqlx::query(
         "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
-             issue_date, previous_hash, hash, generated_at)
-         VALUES ($1, 'cancellation', $2, $3, $4, $5, $6, $7)",
+             issue_date, previous_hash, hash, generated_at, live)
+         VALUES ($1, 'cancellation', $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(invoice_id)
     .bind(&issuer.nif)
@@ -348,6 +397,7 @@ pub async fn cancel_invoice(
     .bind(&previous_hash)
     .bind(&record_hash)
     .bind(&generated_at)
+    .bind(live)
     .execute(&mut *tx)
     .await?;
 
@@ -365,13 +415,15 @@ pub async fn correct_rejected_record(
 ) -> Result<(), StoreError> {
     let mut tx = pool.begin().await?;
     lock_chain(&mut tx, &issuer.nif).await?;
+    let live = is_live(&mut *tx).await?;
 
     let invoice: Option<(String, NaiveDate, String, Decimal, Decimal)> = sqlx::query_as(
         "SELECT series_number, issue_date, invoice_type, total_tax, total_amount
-         FROM invoices WHERE id = $1 AND issuer_nif = $2",
+         FROM invoices WHERE id = $1 AND issuer_nif = $2 AND live = $3",
     )
     .bind(invoice_id)
     .bind(&issuer.nif)
+    .bind(live)
     .fetch_optional(&mut *tx)
     .await?;
     let (series_number, issue_date, invoice_type, total_tax, total_amount) =
@@ -383,7 +435,7 @@ pub async fn correct_rejected_record(
     .bind(invoice_id)
     .fetch_all(&mut *tx)
     .await?;
-    let states = submission::record_states(pool, &issuer.nif).await?;
+    let states = submission::record_states(pool, &issuer.nif, live).await?;
     let state = |id: &i64| states.get(id).map_or(RecordState::Pending, |r| r.state);
     let Some((_, record_type)) = records
         .iter()
@@ -396,7 +448,7 @@ pub async fn correct_rejected_record(
         ));
     };
 
-    let previous_hash = last_hash(&mut tx, &issuer.nif).await?;
+    let previous_hash = last_hash(&mut tx, &issuer.nif, live).await?;
     let generated_at = hash::format_generated_at(&now);
     if record_type == "cancellation" {
         let record_hash = hash::cancellation_hash(&CancellationFields {
@@ -408,8 +460,8 @@ pub async fn correct_rejected_record(
         });
         sqlx::query(
             "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
-                 issue_date, previous_rejection, previous_hash, hash, generated_at)
-             VALUES ($1, 'cancellation', $2, $3, $4, 'S', $5, $6, $7)",
+                 issue_date, previous_rejection, previous_hash, hash, generated_at, live)
+             VALUES ($1, 'cancellation', $2, $3, $4, 'S', $5, $6, $7, $8)",
         )
         .bind(invoice_id)
         .bind(&issuer.nif)
@@ -418,6 +470,7 @@ pub async fn correct_rejected_record(
         .bind(&previous_hash)
         .bind(&record_hash)
         .bind(&generated_at)
+        .bind(live)
         .execute(&mut *tx)
         .await?;
     } else {
@@ -448,8 +501,8 @@ pub async fn correct_rejected_record(
         sqlx::query(
             "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
                  issue_date, invoice_type, total_tax, total_amount, correction,
-                 previous_rejection, previous_hash, hash, generated_at)
-             VALUES ($1, 'registration', $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11)",
+                 previous_rejection, previous_hash, hash, generated_at, live)
+             VALUES ($1, 'registration', $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12)",
         )
         .bind(invoice_id)
         .bind(&issuer.nif)
@@ -462,6 +515,7 @@ pub async fn correct_rejected_record(
         .bind(&previous_hash)
         .bind(&record_hash)
         .bind(&generated_at)
+        .bind(live)
         .execute(&mut *tx)
         .await?;
     }
@@ -477,21 +531,25 @@ pub async fn list_invoices(
     pool: &PgPool,
     issuer_nif: &str,
 ) -> Result<Vec<InvoiceSummary>, StoreError> {
+    let live = is_live(pool).await?;
     let mut invoices: Vec<InvoiceSummary> = sqlx::query_as(&format!(
         "SELECT id, series_number, issue_date, recipient_name, total_amount,
                 {CANCELLED} AS cancelled
-         FROM invoices i WHERE issuer_nif = $1 ORDER BY id DESC"
+         FROM invoices i WHERE issuer_nif = $1 AND live = $2 ORDER BY id DESC"
     ))
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
 
-    let results = submission::record_states(pool, issuer_nif).await?;
-    let records: Vec<(i64, i64)> =
-        sqlx::query_as("SELECT invoice_id, id FROM billing_records WHERE issuer_nif = $1")
-            .bind(issuer_nif)
-            .fetch_all(pool)
-            .await?;
+    let results = submission::record_states(pool, issuer_nif, live).await?;
+    let records: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT invoice_id, id FROM billing_records WHERE issuer_nif = $1 AND live = $2",
+    )
+    .bind(issuer_nif)
+    .bind(live)
+    .fetch_all(pool)
+    .await?;
     for invoice in &mut invoices {
         invoice.aeat_state = Some(RecordState::worst(
             records
@@ -508,15 +566,17 @@ pub async fn get_invoice(
     issuer_nif: &str,
     invoice_id: i64,
 ) -> Result<InvoiceDetail, StoreError> {
+    let live = is_live(pool).await?;
     let invoice: Invoice = sqlx::query_as(
         "SELECT id, issuer_nif, issuer_name, series, number, series_number, issue_date,
                 invoice_type, recipient_name, recipient_nif, issuer_address,
                 recipient_address, contact_id, description,
-                total_base, total_tax, total_amount
-         FROM invoices WHERE id = $1 AND issuer_nif = $2",
+                total_base, total_tax, total_amount, live
+         FROM invoices WHERE id = $1 AND issuer_nif = $2 AND live = $3",
     )
     .bind(invoice_id)
     .bind(issuer_nif)
+    .bind(live)
     .fetch_optional(pool)
     .await?
     .ok_or(StoreError::NotFound)?;
@@ -563,7 +623,7 @@ pub async fn get_invoice(
     .bind(invoice_id)
     .fetch_all(pool)
     .await?;
-    let results = submission::record_states(pool, issuer_nif).await?;
+    let results = submission::record_states(pool, issuer_nif, live).await?;
     for record in &mut records {
         record.aeat = Some(results.get(&record.id).cloned().unwrap_or(RecordResult {
             state: RecordState::Pending,
@@ -597,12 +657,14 @@ struct ChainRow {
 
 /// Recomputes every hash of an issuer's chain and checks the links.
 pub async fn verify_chain(pool: &PgPool, issuer_nif: &str) -> Result<ChainReport, StoreError> {
+    let live = is_live(pool).await?;
     let rows: Vec<ChainRow> = sqlx::query_as(
         "SELECT id, record_type, series_number, issue_date, invoice_type, total_tax,
                 total_amount, previous_hash, hash, generated_at
-         FROM billing_records WHERE issuer_nif = $1 ORDER BY id",
+         FROM billing_records WHERE issuer_nif = $1 AND live = $2 ORDER BY id",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
 
@@ -681,28 +743,32 @@ struct RecordRow {
     total_amount: Decimal,
 }
 
-/// Loads an issuer's records, in chain order, in the shape needed to send
-/// them to the AEAT. Each record comes with its database id.
+/// Loads the records of an issuer's practice or live chain, in chain
+/// order, in the shape needed to send them to the AEAT. Each record comes
+/// with its database id.
 pub async fn chain_records(
     pool: &PgPool,
     issuer_nif: &str,
+    live: bool,
 ) -> Result<Vec<(i64, Record)>, StoreError> {
     let rows: Vec<RecordRow> = sqlx::query_as(
         "SELECT r.id, r.invoice_id, r.record_type, r.series_number, r.issue_date, r.hash,
                 r.generated_at, r.correction, r.previous_rejection, i.issuer_name, i.invoice_type, i.description,
                 i.recipient_name, i.recipient_nif, i.total_tax, i.total_amount
          FROM billing_records r JOIN invoices i ON i.id = r.invoice_id
-         WHERE r.issuer_nif = $1 ORDER BY r.id",
+         WHERE r.issuer_nif = $1 AND r.live = $2 ORDER BY r.id",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
     let tax_rows: Vec<(i64, Decimal, Decimal, Decimal)> = sqlx::query_as(
         "SELECT t.invoice_id, t.vat_rate, t.base_amount, t.tax_amount
          FROM invoice_taxes t JOIN invoices i ON i.id = t.invoice_id
-         WHERE i.issuer_nif = $1 ORDER BY t.invoice_id, t.vat_rate DESC",
+         WHERE i.issuer_nif = $1 AND i.live = $2 ORDER BY t.invoice_id, t.vat_rate DESC",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
 
@@ -806,24 +872,28 @@ pub async fn period_summary(
 ) -> Result<PeriodSummary, StoreError> {
     let (from, to) = quarter_bounds(year, quarter)
         .ok_or_else(|| ValidationError::new("quarter", "must be 1 to 4"))?;
+    let live = is_live(pool).await?;
     let (invoices, cancelled): (i64, i64) = sqlx::query_as(&format!(
         "SELECT count(*) FILTER (WHERE NOT {CANCELLED}), count(*) FILTER (WHERE {CANCELLED})
-         FROM invoices i WHERE issuer_nif = $1 AND issue_date BETWEEN $2 AND $3"
+         FROM invoices i WHERE issuer_nif = $1 AND issue_date BETWEEN $2 AND $3 AND live = $4"
     ))
     .bind(issuer_nif)
     .bind(from)
     .bind(to)
+    .bind(live)
     .fetch_one(pool)
     .await?;
     let taxes: Vec<TaxBreakdown> = sqlx::query_as::<_, (Decimal, Decimal, Decimal)>(&format!(
         "SELECT t.vat_rate, sum(t.base_amount), sum(t.tax_amount)
          FROM invoice_taxes t JOIN invoices i ON i.id = t.invoice_id
-         WHERE i.issuer_nif = $1 AND i.issue_date BETWEEN $2 AND $3 AND NOT {CANCELLED}
+         WHERE i.issuer_nif = $1 AND i.issue_date BETWEEN $2 AND $3 AND i.live = $4
+             AND NOT {CANCELLED}
          GROUP BY t.vat_rate ORDER BY t.vat_rate DESC"
     ))
     .bind(issuer_nif)
     .bind(from)
     .bind(to)
+    .bind(live)
     .fetch_all(pool)
     .await?
     .into_iter()

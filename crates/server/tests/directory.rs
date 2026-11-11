@@ -6,6 +6,7 @@ use axum::http::{Method, StatusCode};
 use common::{get, post, request};
 use serde_json::{json, Value};
 use sqlx::PgPool;
+use vericount_server::store;
 
 async fn put(app: &axum::Router, path: &str, body: Value) -> common::TestResponse {
     request(app, Method::PUT, path, Some(body)).await
@@ -64,7 +65,7 @@ async fn nothing_can_be_invoiced_before_the_company_exists(pool: PgPool) {
 
 #[sqlx::test]
 async fn company_data_changes_but_issued_invoices_keep_theirs(pool: PgPool) {
-    let app = common::app(pool).await;
+    let app = common::app(pool.clone()).await;
     let invoice = post(&app, "/api/invoices", invoice_body()).await.json();
 
     let mut moved = company();
@@ -84,9 +85,25 @@ async fn company_data_changes_but_issued_invoices_keep_theirs(pool: PgPool) {
     assert_eq!(earlier["issuer_name"], "Example SL");
     assert_eq!(earlier["issuer_address"], "Calle Real 5, 15001 A Coruña");
 
-    // The NIF identifies the chain: it is locked once records exist.
+    // The NIF identifies the chain. Practice invoices do not lock it, so
+    // a mistake made while practising can be fixed.
     let mut other = company();
     other["nif"] = json!("A58818501");
+    let response = put(&app, "/api/company", other.clone()).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(
+        put(&app, "/api/company", company()).await.status,
+        StatusCode::OK
+    );
+
+    // In live mode it is locked.
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    store::activate_live_mode(&pool, common::ISSUER_NIF, user_id)
+        .await
+        .unwrap();
     let response = put(&app, "/api/company", other).await;
     assert_eq!(response.status, StatusCode::CONFLICT);
     assert_eq!(response.json()["error"]["code"], "nif_locked");

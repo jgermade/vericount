@@ -25,15 +25,18 @@ APP_URL   := postgres://vericount:vericount@127.0.0.1:$(DEV_DB_PORT)/vericount
 
 # The server in development: the client is opened through Vite, which
 # proxies /api to it, so passkeys are bound to Vite's address. Mail goes
-# to Mailpit and records to the AEAT mock.
+# to Mailpit. Practice records go to the mock inside the server; live
+# ones, once live mode is on, to the AEAT mock that `make up` runs, never
+# to the AEAT. The secret key, which encrypts the uploaded certificate,
+# is fixed: development only.
 DEV_ENV := \
 	DATABASE_URL=$(APP_URL) \
 	VERICOUNT_ADDR=127.0.0.1:$(DEV_SERVER_PORT) \
 	VERICOUNT_PUBLIC_URL=http://localhost:$(DEV_WEB_PORT) \
 	VERICOUNT_SMTP_URL=smtp://127.0.0.1:$(DEV_SMTP_PORT) \
 	VERICOUNT_MAIL_FROM='vericount <no-reply@localhost>' \
+	VERICOUNT_SECRET_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
 	VERICOUNT_AEAT_ENV=test \
-	VERICOUNT_AEAT_SUBMIT=1 \
 	VERICOUNT_AEAT_ENDPOINT=http://127.0.0.1:$(DEV_AEAT_PORT)/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP \
 	VERICOUNT_SOFTWARE_PRODUCER_NAME='vericount desarrollo' \
 	VERICOUNT_SOFTWARE_PRODUCER_NIF=B00000000 \

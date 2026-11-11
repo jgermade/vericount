@@ -53,7 +53,17 @@ export interface AeatResult {
   error_description: string | null
 }
 
+/// "practice": invoices are not real and go to a mock of the AEAT.
+/// "live": real invoices, sent to the AEAT.
+export type Mode = "practice" | "live"
+
+export type LiveBlocker = "certificate_missing" | "certificate_expired" | "producer_missing"
+
 export interface AeatQueue {
+  mode: Mode
+  /// Where live records go: AEAT pre-production ("test") or production.
+  aeat_environment: "test" | "production"
+  /// Whether records are being sent.
   enabled: boolean
   pending: number
   rejected: number
@@ -62,7 +72,11 @@ export interface AeatQueue {
   last_error: string | null
   certificate: Certificate | null
   certificate_matches_company: boolean | null
+  /// Whether the server can store a certificate (it has a secret key).
+  certificate_upload: boolean
   representative_nif: string | null
+  /// Empty when live mode can be turned on, and in live mode.
+  live_blockers: LiveBlocker[]
 }
 
 export interface Certificate {
@@ -143,6 +157,8 @@ export interface Invoice extends Totals {
   taxes: TaxBreakdown[]
   records: BillingRecord[]
   qr_url: string
+  /// False for a practice invoice, which is not real.
+  live: boolean
 }
 
 export interface ChainReport {

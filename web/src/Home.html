@@ -24,6 +24,8 @@
   }
 </script>
 
+<p :if="queue && queue.mode === 'practice'" class="notice practice">{{ t.list.practice }}</p>
+
 <section :if="summary">
   <div class="bar">
     <h2>{{ t.home.quarter(summary.quarter, summary.year) }}</h2>

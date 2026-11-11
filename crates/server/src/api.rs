@@ -23,12 +23,14 @@ use vericount_core::{
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 use crate::{
+    aeat_service::{self, CertificateError},
     auth::{self, CurrentUser, LoginError},
+    certificate::CertificateInfo,
     directory::{self, Company, Contact, ContactInput, NewSeries, Series, SeriesUpdate},
     mail,
     passkeys::{self, PasskeyError},
     store::{self, ChainReport, InvoiceDetail, InvoiceSummary, NewInvoice, StoreError},
-    submission::{self, QueueStatus, RunOutcome},
+    submission::{self, LiveBlocker, QueueStatus, RunOutcome},
     AppState,
 };
 
@@ -49,6 +51,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/contacts/{id}", get(get_contact).put(update_contact))
         .route("/aeat", get(aeat_status))
         .route("/aeat/submissions", post(submit_now))
+        .route(
+            "/aeat/certificate",
+            put(upload_certificate).delete(remove_certificate),
+        )
+        .route("/aeat/live", post(activate_live_mode))
         .route("/passkeys", get(list_passkeys).post(add_passkey))
         .route("/passkeys/options", post(passkey_registration_options))
         .route("/passkeys/{id}", delete(remove_passkey))
@@ -184,8 +191,15 @@ struct InvoiceResponse {
 async fn invoice_response(state: &AppState, id: i64) -> Result<InvoiceResponse, ApiError> {
     let detail =
         store::get_invoice(&state.pool, &directory::issuer(&state.pool).await?.nif, id).await?;
+    // Practice invoices are not real: their QR code never points to the
+    // production service.
+    let environment = if detail.invoice.live {
+        state.config.aeat_environment
+    } else {
+        qr::AeatEnvironment::Test
+    };
     let qr_url = qr::qr_url(
-        state.config.aeat_environment,
+        environment,
         &detail.invoice.issuer_nif,
         &detail.invoice.series_number,
         detail.invoice.issue_date,
@@ -588,7 +602,7 @@ async fn aeat_status(State(state): State<AppState>) -> Result<Json<QueueStatus>,
         submission::queue_status(
             &state.pool,
             &directory::issuer(&state.pool).await?.nif,
-            state.submitter.as_deref(),
+            &state.aeat,
         )
         .await?,
     ))
@@ -599,17 +613,17 @@ async fn submit_now(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
 ) -> Result<Json<RunOutcome>, ApiError> {
-    let Some(submitter) = &state.submitter else {
+    let Some(submitter) = state.aeat.current() else {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
             "aeat_disabled",
-            "sending records to the AEAT is not enabled",
+            "records are not being sent",
         ));
     };
     let outcome = submission::run_once(
         &state.pool,
         &directory::issuer(&state.pool).await?,
-        submitter,
+        &submitter,
     )
     .await?;
     auth::log_event(
@@ -620,6 +634,134 @@ async fn submit_now(
     )
     .await;
     Ok(Json(outcome))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CertificateUpload {
+    /// The file, in base64: PKCS#12 (.p12, .pfx) or PEM.
+    file: String,
+    /// Password of a PKCS#12 file.
+    #[serde(default)]
+    password: String,
+}
+
+/// Reloads the submitter after a change of mode or certificate.
+async fn reload_aeat(state: &AppState) {
+    if let Err(error) = state.aeat.reload(&state.pool).await {
+        eprintln!("records are not being sent: {error}");
+    }
+}
+
+async fn upload_certificate(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    body: Result<Json<CertificateUpload>, JsonRejection>,
+) -> Result<Json<CertificateInfo>, ApiError> {
+    use base64::Engine;
+    let Json(body) = body?;
+    let file = base64::engine::general_purpose::STANDARD
+        .decode(body.file.trim())
+        .map_err(|_| {
+            ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "certificate_unreadable",
+                "the file is not valid base64",
+            )
+        })?;
+    let info = aeat_service::save_certificate(
+        &state.pool,
+        state.aeat.settings.secret_key.as_ref(),
+        user.id,
+        &file,
+        &body.password,
+        Utc::now(),
+    )
+    .await
+    .map_err(|error| match error {
+        CertificateError::SecretKeyMissing => ApiError::new(
+            StatusCode::CONFLICT,
+            "secret_key_missing",
+            "VERICOUNT_SECRET_KEY is not set: certificates cannot be stored",
+        ),
+        CertificateError::Unreadable(reason) => ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "certificate_unreadable",
+            reason,
+        ),
+        CertificateError::Expired => ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "certificate_expired",
+            "the certificate has expired",
+        ),
+        CertificateError::Database(error) => StoreError::Database(error).into(),
+    })?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "aeat.certificate_uploaded",
+        &format!("{} {}", info.subject, info.nif.as_deref().unwrap_or("")),
+    )
+    .await;
+    reload_aeat(&state).await;
+    Ok(Json(info))
+}
+
+async fn remove_certificate(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+) -> Result<StatusCode, ApiError> {
+    if !aeat_service::remove_certificate(&state.pool).await? {
+        return Err(StoreError::NotFound.into());
+    }
+    auth::log_event(&state.pool, Some(user.id), "aeat.certificate_removed", "").await;
+    reload_aeat(&state).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Turns live mode on: from now on invoices are real and their records go
+/// to the AEAT. Practice invoices are no longer shown. There is no way
+/// back.
+async fn activate_live_mode(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+) -> Result<Json<QueueStatus>, ApiError> {
+    let issuer = directory::issuer(&state.pool).await?;
+    let status = submission::queue_status(&state.pool, &issuer.nif, &state.aeat).await?;
+    if status.mode == "live" {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "already_live",
+            "live mode is already on",
+        ));
+    }
+    if let Some(blocker) = status.live_blockers.first() {
+        let (code, message) = match blocker {
+            LiveBlocker::CertificateMissing => {
+                ("certificate_missing", "upload a certificate first")
+            }
+            LiveBlocker::CertificateExpired => {
+                ("certificate_expired", "the certificate has expired")
+            }
+            LiveBlocker::ProducerMissing => (
+                "producer_missing",
+                "set VERICOUNT_SOFTWARE_PRODUCER_NAME and VERICOUNT_SOFTWARE_PRODUCER_NIF",
+            ),
+        };
+        return Err(ApiError::new(StatusCode::CONFLICT, code, message));
+    }
+    store::activate_live_mode(&state.pool, &issuer.nif, user.id).await?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "aeat.live_mode_activated",
+        &issuer.nif,
+    )
+    .await;
+    reload_aeat(&state).await;
+    Ok(Json(
+        submission::queue_status(&state.pool, &issuer.nif, &state.aeat).await?,
+    ))
 }
 
 async fn get_company(State(state): State<AppState>) -> Result<Json<Company>, ApiError> {

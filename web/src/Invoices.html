@@ -126,6 +126,7 @@
     <h2>{{ t.nav.invoices }}</h2>
     <button class="primary" @click="showNew">{{ t.list.newInvoice }}</button>
   </div>
+  <p :if="queue && queue.mode === 'practice'" class="notice practice">{{ t.list.practice }}</p>
   <p :if="chain && !chain.valid" class="error" role="alert">{{ t.list.chainBroken(chain.error.record_id) }}</p>
   <p :elseif="chain" class="muted">{{ t.list.chainOk(chain.records) }}</p>
 
@@ -226,6 +227,7 @@
     <h2>
       {{ t.detail.title(invoice.series_number) }}
       <span :if="invoice.cancelled" class="tag">{{ t.list.cancelled }}</span>
+      <span :if="!invoice.live" class="tag">{{ t.list.practiceTag }}</span>
     </h2>
     <button @click="showList">{{ t.back }}</button>
   </div>
@@ -304,6 +306,7 @@
         <h2>{{ t.print.invoice }} {{ invoice.series_number }}</h2>
         <p>{{ t.print.issueDate }}: {{ invoice.issue_date.split("-").reverse().join("/") }}</p>
         <p :if="invoice.cancelled" class="stamp">{{ t.print.cancelled }}</p>
+        <p :if="!invoice.live" class="stamp">{{ t.print.practice }}</p>
       </div>
       <figure class="qr">
         <figcaption>{{ t.print.qrLabel }}</figcaption>

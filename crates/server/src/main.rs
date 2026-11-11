@@ -1,16 +1,15 @@
-use std::{env, fs, sync::Arc, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
-use vericount_core::aeat::{Party, SoftwareSystem};
 use vericount_server::{
-    aeat_client::AeatClient,
-    auth, certificate,
-    config::{self, Config, Startup},
+    aeat_service::{self, AeatService},
+    auth,
+    config::{self, AeatSettings, Config, Startup},
     directory,
     mail::Mailer,
     store::StoreError,
-    submission::{self, RunOutcome, Submitter},
+    submission::{self, RunOutcome},
     AppState, MIGRATOR,
 };
 
@@ -107,51 +106,17 @@ async fn invite(email: &str) -> Result<(), AnyError> {
     Ok(())
 }
 
-fn submitter(config: &Config) -> Result<Option<Arc<Submitter>>, AnyError> {
-    let Some(settings) = config::Submission::from_env(config.aeat_environment)? else {
-        return Ok(None);
-    };
-    let identity = settings
-        .identity_pem_path
-        .as_deref()
-        .map(fs::read)
-        .transpose()?;
-    let client = AeatClient::new(settings.endpoint.clone(), identity.as_deref())?;
-    println!("sending records to {}", settings.endpoint);
-    let mut submitter = Submitter::new(
-        client,
-        SoftwareSystem {
-            producer: Party {
-                name: settings.producer_name,
-                nif: settings.producer_nif,
-            },
-            name: "vericount".to_owned(),
-            id: "VC".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            installation_number: settings.installation_number,
-        },
-    );
-    submitter.representative = settings
-        .representative
-        .map(|(name, nif)| Party { name, nif });
-    if let Some(identity) = &identity {
-        let info = certificate::inspect(identity)?;
-        println!(
-            "client certificate: {} (NIF {}), expires {}",
-            info.subject,
-            info.nif.as_deref().unwrap_or("unknown"),
-            info.expires_at
-        );
-        submitter.certificate = Some(info);
-    }
-    Ok(Some(Arc::new(submitter)))
-}
-
 /// Sends pending records forever, waiting between requests for as long
 /// as the AEAT asks, and at least a minute.
-async fn submission_loop(state: AppState, submitter: Arc<Submitter>) {
+async fn submission_loop(state: AppState) {
     const MIN_WAIT: u64 = 60;
     loop {
+        // The submitter changes when live mode is turned on or the
+        // certificate changes.
+        let Some(submitter) = state.aeat.current() else {
+            tokio::time::sleep(Duration::from_secs(MIN_WAIT)).await;
+            continue;
+        };
         let outcome = match directory::issuer(&state.pool).await {
             Ok(issuer) => submission::run_once(&state.pool, &issuer, &submitter).await,
             Err(error) => Err(error),
@@ -163,7 +128,12 @@ async fn submission_loop(state: AppState, submitter: Arc<Submitter>) {
                 wait_seconds,
                 ..
             }) => {
-                println!("sent {records} records to the AEAT: {outcome}");
+                let to = if submitter.live {
+                    "the AEAT"
+                } else {
+                    "the practice mock"
+                };
+                println!("sent {records} records to {to}: {outcome}");
                 u64::from(wait_seconds.unwrap_or(0)).max(MIN_WAIT)
             }
             Ok(_) => MIN_WAIT,
@@ -181,7 +151,37 @@ async fn submission_loop(state: AppState, submitter: Arc<Submitter>) {
 async fn serve() -> Result<(), AnyError> {
     let (startup, pool) = connect(10).await?;
     let config = Config::from_env()?;
-    let submitter = submitter(&config)?;
+    for old in ["VERICOUNT_AEAT_SUBMIT", "VERICOUNT_AEAT_IDENTITY_PEM"] {
+        if config::var(old).is_ok() {
+            eprintln!(
+                "{old} is no longer used: records are sent in practice mode from the start, \
+                 and the certificate is uploaded in the settings"
+            );
+        }
+    }
+    let practice_endpoint = aeat_service::start_practice_mock(&pool).await?;
+    let aeat = AeatService::new(
+        AeatSettings::from_env(config.aeat_environment)?,
+        Some(practice_endpoint),
+    );
+    if let Err(error) = aeat.reload(&pool).await {
+        eprintln!("records are not being sent: {error}");
+    }
+    match aeat.current() {
+        Some(submitter) if submitter.live => {
+            println!("live mode: sending records to the AEAT");
+            if let Some(info) = &submitter.certificate {
+                println!(
+                    "client certificate: {} (NIF {}), expires {}",
+                    info.subject,
+                    info.nif.as_deref().unwrap_or("unknown"),
+                    info.expires_at
+                );
+            }
+        }
+        Some(_) => println!("practice mode: records go to the mock inside the server"),
+        None => println!("live mode: no certificate, records wait until one is uploaded"),
+    }
     let mailer = Mailer::from_env(config.aeat_environment)?;
     if matches!(mailer, Mailer::Log) {
         eprintln!("SMTP is not configured: emails, sign-in codes included, go to standard error");
@@ -193,11 +193,9 @@ async fn serve() -> Result<(), AnyError> {
         config: Arc::new(config),
         mailer: Arc::new(mailer),
         webauthn: Arc::new(webauthn),
-        submitter: submitter.clone(),
+        aeat: Arc::new(aeat),
     };
-    if let Some(submitter) = submitter {
-        tokio::spawn(submission_loop(state.clone(), submitter));
-    }
+    tokio::spawn(submission_loop(state.clone()));
 
     let listener = TcpListener::bind(startup.addr).await?;
     println!("listening on http://{}", listener.local_addr()?);

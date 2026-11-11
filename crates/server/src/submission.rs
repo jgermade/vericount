@@ -81,21 +81,26 @@ pub struct RecordResult {
 pub async fn record_states(
     pool: &PgPool,
     issuer_nif: &str,
+    live: bool,
 ) -> Result<HashMap<i64, RecordResult>, StoreError> {
     let results: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT DISTINCT ON (r.record_id) r.record_id, r.status, r.error_code, r.error_description
-         FROM aeat_record_results r JOIN aeat_submissions s ON s.id = r.submission_id
-         WHERE s.issuer_nif = $1
+         FROM aeat_record_results r
+         JOIN aeat_submissions s ON s.id = r.submission_id
+         JOIN billing_records b ON b.id = r.record_id
+         WHERE s.issuer_nif = $1 AND b.live = $2
          ORDER BY r.record_id, r.submission_id DESC",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
     let records: Vec<(i64, i64, String)> = sqlx::query_as(
         "SELECT id, invoice_id, record_type FROM billing_records
-         WHERE issuer_nif = $1 ORDER BY id",
+         WHERE issuer_nif = $1 AND live = $2 ORDER BY id",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_all(pool)
     .await?;
 
@@ -137,8 +142,11 @@ pub async fn record_states(
     Ok(states)
 }
 
-/// Everything needed to send records.
+/// Everything needed to send the records of one mode.
 pub struct Submitter {
+    /// Live records go to the AEAT; practice records, to the mock inside
+    /// the server.
+    pub live: bool,
     pub client: AeatClient,
     pub system: SoftwareSystem,
     /// Who submits on behalf of the issuer, when declared.
@@ -150,8 +158,10 @@ pub struct Submitter {
 }
 
 impl Submitter {
+    /// A submitter of practice records.
     pub fn new(client: AeatClient, system: SoftwareSystem) -> Self {
         Self {
+            live: false,
             client,
             system,
             representative: None,
@@ -216,8 +226,8 @@ pub async fn run_once(
 ) -> Result<RunOutcome, StoreError> {
     let _guard = submitter.lock.lock().await;
 
-    let records = store::chain_records(pool, &issuer.nif).await?;
-    let states = record_states(pool, &issuer.nif).await?;
+    let records = store::chain_records(pool, &issuer.nif, submitter.live).await?;
+    let states = record_states(pool, &issuer.nif, submitter.live).await?;
     let state = |id: &i64| states.get(id).map_or(RecordState::Pending, |r| r.state);
 
     // Records that still have to reach the AEAT, in chain order.
@@ -250,10 +260,12 @@ pub async fn run_once(
     // between, the attempt is still on record.
     let mut tx = pool.begin().await?;
     let submission_id: i64 = sqlx::query_scalar(
-        "INSERT INTO aeat_submissions (issuer_nif, request_xml) VALUES ($1, $2) RETURNING id",
+        "INSERT INTO aeat_submissions (issuer_nif, request_xml, live)
+         VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(&issuer.nif)
     .bind(aeat::soap_envelope(&request))
+    .bind(submitter.live)
     .fetch_one(&mut *tx)
     .await?;
     for (record_id, _) in &batch {
@@ -362,9 +374,28 @@ pub async fn run_once(
     })
 }
 
+/// What stands in the way of turning live mode on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveBlocker {
+    /// No certificate has been uploaded.
+    CertificateMissing,
+    /// The uploaded certificate has expired.
+    CertificateExpired,
+    /// VERICOUNT_SOFTWARE_PRODUCER_NAME and _NIF are not set.
+    ProducerMissing,
+}
+
 /// Summary of the submission queue, for the user interface.
 #[derive(Debug, Serialize)]
 pub struct QueueStatus {
+    /// "practice" or "live".
+    pub mode: &'static str,
+    /// Where live records go: "test" (the AEAT pre-production service) or
+    /// "production".
+    pub aeat_environment: &'static str,
+    /// Whether records are being sent. In live mode, not without a
+    /// certificate.
     pub enabled: bool,
     pub pending: usize,
     pub rejected: usize,
@@ -376,27 +407,51 @@ pub struct QueueStatus {
     /// Whether the certificate acts for the company itself. When it does
     /// not, the company must have empowered its holder at the AEAT.
     pub certificate_matches_company: Option<bool>,
+    /// Whether certificates can be uploaded: VERICOUNT_SECRET_KEY is set.
+    pub certificate_upload: bool,
     pub representative_nif: Option<String>,
+    /// Empty when live mode can be turned on, and in live mode.
+    pub live_blockers: Vec<LiveBlocker>,
 }
 
 pub async fn queue_status(
     pool: &PgPool,
     issuer_nif: &str,
-    submitter: Option<&Submitter>,
+    service: &crate::aeat_service::AeatService,
 ) -> Result<QueueStatus, StoreError> {
-    let states = record_states(pool, issuer_nif).await?;
+    let live = store::is_live(pool).await?;
+    let states = record_states(pool, issuer_nif, live).await?;
     let count = |wanted: RecordState| states.values().filter(|r| r.state == wanted).count();
     let last: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT r.outcome, r.error FROM aeat_responses r
          JOIN aeat_submissions s ON s.id = r.submission_id
-         WHERE s.issuer_nif = $1 ORDER BY r.submission_id DESC LIMIT 1",
+         WHERE s.issuer_nif = $1 AND s.live = $2 ORDER BY r.submission_id DESC LIMIT 1",
     )
     .bind(issuer_nif)
+    .bind(live)
     .fetch_optional(pool)
     .await?;
-    let certificate = submitter.and_then(|s| s.certificate.clone());
+    let certificate = crate::aeat_service::certificate_info(pool).await?;
+    let mut live_blockers = Vec::new();
+    if !live {
+        match &certificate {
+            None => live_blockers.push(LiveBlocker::CertificateMissing),
+            Some(info) if info.expires_at <= chrono::Utc::now() => {
+                live_blockers.push(LiveBlocker::CertificateExpired)
+            }
+            Some(_) => {}
+        }
+        if service.settings.producer.is_none() {
+            live_blockers.push(LiveBlocker::ProducerMissing);
+        }
+    }
     Ok(QueueStatus {
-        enabled: submitter.is_some(),
+        mode: if live { "live" } else { "practice" },
+        aeat_environment: match service.settings.environment {
+            vericount_core::qr::AeatEnvironment::Test => "test",
+            vericount_core::qr::AeatEnvironment::Production => "production",
+        },
+        enabled: service.current().is_some(),
         pending: count(RecordState::Pending),
         rejected: count(RecordState::Rejected),
         accepted_with_errors: count(RecordState::AcceptedWithErrors),
@@ -406,8 +461,12 @@ pub async fn queue_status(
             .as_ref()
             .map(|c| c.nif.as_deref() == Some(issuer_nif)),
         certificate,
-        representative_nif: submitter
-            .and_then(|s| s.representative.as_ref())
+        certificate_upload: service.settings.secret_key.is_some(),
+        representative_nif: service
+            .settings
+            .representative
+            .as_ref()
             .map(|party| party.nif.clone()),
+        live_blockers,
     })
 }

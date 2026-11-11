@@ -1,6 +1,7 @@
 //! HTTP server for vericount: serves the web client and the API.
 
 pub mod aeat_client;
+pub mod aeat_service;
 pub mod api;
 pub mod auth;
 pub mod certificate;
@@ -32,8 +33,8 @@ pub struct AppState {
     pub mailer: Arc<mail::Mailer>,
     /// Passkey settings, derived from `config.public_url`.
     pub webauthn: Arc<Webauthn>,
-    /// Present when sending records to the AEAT is enabled.
-    pub submitter: Option<Arc<submission::Submitter>>,
+    /// Mode, certificate and submitter of the AEAT records.
+    pub aeat: Arc<aeat_service::AeatService>,
 }
 
 /// Builds the application router.
