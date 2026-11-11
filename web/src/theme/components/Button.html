@@ -66,91 +66,46 @@
     gap: var(--vc-space-2);
     min-height: var(--h);
     min-width: var(--h);
-    padding: 0 var(--vc-space-4);
-    border: var(--vc-border-width) solid var(--vc-border);
-    border-radius: var(--vc-radius-md);
-    background: var(--vc-surface);
-    color: var(--vc-fg);
+    padding: 0 var(--vc-space-5);
+    border: 0;
+    border-radius: var(--vc-radius-full);
+    background: var(--vc-accent-soft);
+    color: var(--vc-accent);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-md);
-    font-weight: var(--vc-weight-medium);
+    font-weight: var(--vc-weight-bold);
     line-height: 1.2;
     cursor: pointer;
-    box-shadow: var(--vc-shadow-sm);
     transition: background var(--vc-duration-fast) ease,
-                border-color var(--vc-duration-fast) ease,
+                color var(--vc-duration-fast) ease,
                 transform var(--vc-duration-fast) ease;
   }
-  .button:hover:not(:disabled) {
-    background: var(--vc-hover);
-    border-color: var(--vc-border-strong);
-  }
-  /* Pressed into the paper. */
-  .button:active:not(:disabled) {
-    background: var(--vc-active);
-    transform: translateY(1px);
-    box-shadow: none;
-  }
-  .button:focus-visible {
-    outline: 2px solid var(--vc-focus);
-    outline-offset: 2px;
-  }
-  .button:disabled {
-    cursor: default;
-    opacity: .5;
-    box-shadow: none;
-  }
+  .button:hover:not(:disabled) { background: var(--vc-selected); }
+  /* Pressed: the pill gives a little. */
+  .button:active:not(:disabled) { transform: scale(.97); }
+  .button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .button:disabled { cursor: default; opacity: .4; }
 
-  .primary {
-    background: var(--vc-accent);
-    border-color: var(--vc-accent);
-    color: var(--vc-on-accent);
-  }
-  .primary:hover:not(:disabled) {
-    background: var(--vc-accent-hover);
-    border-color: var(--vc-accent-hover);
-  }
-  .primary:active:not(:disabled) {
-    background: var(--vc-accent-active);
-    border-color: var(--vc-accent-active);
-  }
+  .primary { background: var(--vc-accent); color: var(--vc-on-accent); }
+  .primary:hover:not(:disabled) { background: var(--vc-accent-hover); }
+  .primary:active:not(:disabled) { background: var(--vc-accent-active); }
 
-  .ghost {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-    color: var(--vc-accent);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--vc-hover);
-    border-color: transparent;
-  }
+  .ghost { background: transparent; color: var(--vc-accent); }
+  .ghost:hover:not(:disabled) { background: var(--vc-hover); }
 
-  /* What cannot be undone is outlined in red until it is pressed: it should
-     not be the loudest thing on the page. */
-  .danger {
-    border-color: var(--vc-bad);
-    color: var(--vc-bad);
-  }
-  .danger:hover:not(:disabled) {
-    background: var(--vc-bad);
-    border-color: var(--vc-bad);
-    color: var(--vc-on-accent);
-  }
-  .danger:active:not(:disabled) {
-    background: var(--vc-bad-active);
-    border-color: var(--vc-bad-active);
-    color: var(--vc-on-accent);
-  }
+  /* What cannot be undone: a soft red until it is pressed. */
+  .danger { background: var(--vc-bad-soft); color: var(--vc-bad); }
+  .danger:hover:not(:disabled) { background: var(--vc-bad); color: var(--vc-on-accent); }
+  .danger:active:not(:disabled) { background: var(--vc-bad-active); color: var(--vc-on-accent); }
 
   .sm {
     --h: var(--vc-control-sm);
-    padding: 0 var(--vc-space-3);
+    padding: 0 var(--vc-space-4);
     font-size: var(--vc-text-sm);
   }
   .lg {
     --h: var(--vc-control-lg);
-    padding: 0 var(--vc-space-5);
+    padding: 0 var(--vc-space-6);
     font-size: var(--vc-text-lg);
   }
   .block { display: flex; width: 100%; }
@@ -158,8 +113,8 @@
   .loading .content { visibility: hidden; }
   .spin {
     position: absolute;
-    width: 1em;
-    height: 1em;
+    width: 1.1em;
+    height: 1.1em;
     border: 2px solid currentColor;
     border-right-color: transparent;
     border-radius: 50%;

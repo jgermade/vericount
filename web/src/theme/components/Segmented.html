@@ -30,29 +30,29 @@
   .segmented {
     display: inline-flex;
     gap: 2px;
-    padding: 3px;
-    border-radius: var(--vc-radius-md);
+    padding: 4px;
+    border-radius: var(--vc-radius-full);
     background: var(--vc-sunken);
     font-family: var(--vc-font-sans);
   }
   .segment {
-    min-height: calc(var(--vc-control-md) - 6px);
+    min-height: calc(var(--vc-control-sm) - 4px);
     padding: 0 var(--vc-space-4);
     border: 0;
-    border-radius: calc(var(--vc-radius-md) - 2px);
+    border-radius: var(--vc-radius-full);
     background: transparent;
     color: var(--vc-fg-muted);
     font-family: inherit;
     font-size: var(--vc-text-sm);
-    font-weight: var(--vc-weight-medium);
+    font-weight: var(--vc-weight-bold);
     cursor: pointer;
     transition: background var(--vc-duration-fast) ease, color var(--vc-duration-fast) ease;
   }
   .segment:hover:not(.on) { color: var(--vc-fg); }
-  .segment:focus-visible { outline: 2px solid var(--vc-focus); outline-offset: 1px; }
+  .segment:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
   .on {
     background: var(--vc-surface);
     color: var(--vc-fg);
-    box-shadow: var(--vc-shadow-sm), 0 0 0 1px var(--vc-line);
+    box-shadow: var(--vc-shadow-md);
   }
 </style>

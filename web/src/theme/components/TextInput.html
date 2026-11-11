@@ -15,7 +15,7 @@
   // A line of text. The value goes up through `:model` and as `input` on
   // every keystroke; `change` when it is committed, `enter` on Enter.
   // `prefix` and `suffix` are units inside the box ("€", "%", "uds."), and
-  // `align="end"` lines numbers up on the right, as in a ledger column.
+  // `align="end"` lines numbers up on the right.
   //
   //   <TextInput :model="line.unit_price" inputmode="decimal" suffix="€" align="end" />
   //
@@ -68,29 +68,26 @@
 </span>
 
 <style scoped>
+  /* Filled, not outlined: the field is a soft well that rings when focused. */
   .box {
     display: flex;
     align-items: center;
     min-height: var(--vc-control-md);
-    border: var(--vc-border-width) solid var(--vc-border);
+    border: 2px solid transparent;
     border-radius: var(--vc-radius-md);
     background: var(--vc-field);
-    transition: border-color var(--vc-duration-fast) ease, box-shadow var(--vc-duration-fast) ease;
+    transition: border-color var(--vc-duration-fast) ease, background var(--vc-duration-fast) ease;
   }
-  .box:hover { border-color: var(--vc-border-strong); }
-  .box:focus-within {
-    border-color: var(--vc-focus);
-    box-shadow: 0 0 0 3px var(--vc-focus-ring);
-  }
-  .invalid, .invalid:hover { border-color: var(--vc-bad); }
-  .invalid:focus-within { box-shadow: 0 0 0 3px var(--vc-bad-soft); border-color: var(--vc-bad); }
+  .box:focus-within { border-color: var(--vc-focus); background: var(--vc-surface); }
+  .invalid { border-color: var(--vc-bad); background: var(--vc-bad-soft); }
+  .invalid:focus-within { border-color: var(--vc-bad); }
   .disabled { background: var(--vc-field-off); }
   .input {
     flex: 1;
     min-width: 0;
     height: 100%;
-    min-height: calc(var(--vc-control-md) - 2px);
-    padding: 0 var(--vc-space-3);
+    min-height: calc(var(--vc-control-md) - 4px);
+    padding: 0 var(--vc-space-4);
     border: 0;
     background: transparent;
     color: var(--vc-fg);
@@ -98,17 +95,19 @@
     /* 16px at least: smaller makes iOS zoom in on focus. */
     font-size: var(--vc-text-md);
     font-variant-numeric: var(--vc-figures);
+    font-weight: var(--vc-weight-medium);
     outline: none;
   }
-  .input::placeholder { color: var(--vc-fg-subtle); }
+  .input::placeholder { color: var(--vc-fg-subtle); font-weight: var(--vc-weight-regular); }
   .input:disabled { color: var(--vc-fg-subtle); }
   .end { text-align: right; }
   .unit {
     flex: none;
-    padding: 0 var(--vc-space-3);
+    padding: 0 var(--vc-space-4);
     color: var(--vc-fg-muted);
     font-family: var(--vc-font-sans);
-    font-size: var(--vc-text-sm);
+    font-size: var(--vc-text-md);
+    font-weight: var(--vc-weight-medium);
   }
   .unit:first-child { padding-right: 0; }
   .input + .unit { padding-left: 0; }

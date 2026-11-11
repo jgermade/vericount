@@ -1,6 +1,6 @@
 <script :setup="{ model = false, disabled = false }: CheckboxProps" lang="ts">
   // A yes or no, with its label in the slot: "Cliente", "Proveedor". The
-  // box is ticked like a ledger's check column. The value goes up through
+  // box fills with the accent when ticked. The value goes up through
   // `:model` and as `change`.
   //
   //   <Checkbox :model="contact.is_customer">{{ t.contacts.customer }}</Checkbox>
@@ -50,10 +50,10 @@
     display: grid;
     flex: none;
     place-items: center;
-    width: 22px;
-    height: 22px;
-    border: 1.5px solid var(--vc-border-strong);
-    border-radius: var(--vc-radius-sm);
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--vc-border-strong);
+    border-radius: 7px;
     background: var(--vc-field);
     transition: background var(--vc-duration-fast) ease, border-color var(--vc-duration-fast) ease;
   }
@@ -74,9 +74,6 @@
     background: var(--vc-accent);
   }
   .native:checked + .box svg { stroke-dashoffset: 0; }
-  .native:focus-visible + .box {
-    outline: 2px solid var(--vc-focus);
-    outline-offset: 2px;
-  }
+  .native:focus-visible + .box { box-shadow: 0 0 0 3px var(--vc-focus-ring); }
   .native:disabled + .box { background: var(--vc-field-off); border-color: var(--vc-border); }
 </style>

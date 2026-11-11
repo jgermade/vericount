@@ -1,5 +1,5 @@
 <script :setup="{ amount = '0', currency = 'EUR', size = '', signed = false, muted = false }: AmountProps" lang="ts">
-  // A sum of money, as a ledger writes it: figures of one width that line
+  // A sum of money: figures of one width that line
   // up in a column, the cents a step smaller, the currency quiet after it.
   // Negative sums are red. `amount` is the API's decimal string (or a
   // number); it is formatted for Spain. (Not `value`: jq79 binds `:value` as
@@ -67,12 +67,14 @@
   .muted { color: var(--vc-fg-muted); }
   .size-sm { font-size: var(--vc-text-sm); }
   .size-md { font-size: var(--vc-text-md); }
-  .size-lg { font-size: var(--vc-text-xl); font-weight: var(--vc-weight-medium); }
-  /* The figure a page is about: in the ledger's serif. */
+  .size-lg { font-size: var(--vc-text-xl); font-weight: var(--vc-weight-bold); letter-spacing: var(--vc-tracking-display); }
+  /* The figure a screen is about: big and heavy, the cents a step down. */
   .size-xl {
     font-family: var(--vc-font-display);
     font-size: var(--vc-text-3xl);
-    font-weight: var(--vc-weight-bold);
-    letter-spacing: -.01em;
+    font-weight: var(--vc-weight-heavy);
+    letter-spacing: var(--vc-tracking-display);
+    line-height: 1;
   }
+  .size-xl .fraction, .size-xl .symbol { font-size: .55em; font-weight: var(--vc-weight-bold); }
 </style>

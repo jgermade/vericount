@@ -33,40 +33,36 @@
 <style scoped>
   .confirm {
     --ink: var(--vc-bad);
-    --ground: var(--vc-bad-soft);
-    padding: var(--vc-space-4);
-    border: var(--vc-border-width) solid var(--ink);
-    border-radius: var(--vc-radius-md);
-    background: var(--ground);
+    padding: var(--vc-space-5);
+    border-radius: var(--vc-radius-lg);
+    background: var(--vc-surface);
+    box-shadow: var(--vc-shadow-md);
     color: var(--vc-fg);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-md);
     animation: arrive var(--vc-duration) var(--vc-ease-out);
   }
-  .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
-  .tone-accent { --ink: var(--vc-accent); --ground: var(--vc-accent-soft); }
-  .question { margin-bottom: var(--vc-space-3); font-weight: var(--vc-weight-medium); }
+  .tone-warn { --ink: var(--vc-warn); }
+  .tone-accent { --ink: var(--vc-accent); }
+  .question { margin-bottom: var(--vc-space-4); font-weight: var(--vc-weight-bold); }
   .answers { display: flex; flex-wrap: wrap; gap: var(--vc-space-2); }
   .answer {
+    flex: 1;
     min-height: var(--vc-control-md);
-    padding: 0 var(--vc-space-4);
-    border: var(--vc-border-width) solid var(--vc-border);
-    border-radius: var(--vc-radius-md);
-    background: var(--vc-surface);
+    padding: 0 var(--vc-space-5);
+    border: 0;
+    border-radius: var(--vc-radius-full);
+    background: var(--vc-sunken);
     color: var(--vc-fg);
     font-family: inherit;
     font-size: inherit;
-    font-weight: var(--vc-weight-medium);
+    font-weight: var(--vc-weight-bold);
     cursor: pointer;
   }
-  .go {
-    border-color: var(--ink);
-    background: var(--ink);
-    color: var(--vc-on-accent);
-  }
-  .answer:focus-visible { outline: 2px solid var(--vc-focus); outline-offset: 2px; }
-  .answer:disabled { opacity: .5; cursor: default; }
+  .go { background: var(--ink); color: var(--vc-on-accent); }
+  .answer:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .answer:disabled { opacity: .45; cursor: default; }
   @keyframes arrive {
-    from { opacity: 0; transform: translateY(-4px); }
+    from { opacity: 0; transform: translateY(6px) scale(.98); }
   }
 </style>

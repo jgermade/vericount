@@ -58,50 +58,36 @@
     display: flex;
     align-items: center;
     gap: var(--vc-space-3);
-    min-height: calc(var(--vc-control-lg) + var(--vc-space-4));
+    min-height: 72px;
     padding: var(--vc-space-3) var(--vc-space-4);
-    border: 1.5px dashed var(--vc-border-strong);
+    border: 2px dashed var(--vc-border);
     border-radius: var(--vc-radius-md);
-    background: var(--vc-bg);
+    background: var(--vc-field);
     color: var(--vc-fg-muted);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-sm);
     cursor: pointer;
     transition: background var(--vc-duration-fast) ease, border-color var(--vc-duration-fast) ease;
   }
-  .drop:hover, .over {
-    border-color: var(--vc-accent);
-    background: var(--vc-accent-soft);
-  }
-  .has {
-    border-style: solid;
-    border-color: var(--vc-ok);
-    background: var(--vc-ok-soft);
-    color: var(--vc-fg);
-  }
-  .disabled { opacity: .5; cursor: default; }
-  .native {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: inherit;
-  }
-  .drop:focus-within { outline: 2px solid var(--vc-focus); outline-offset: 2px; }
+  .drop:hover, .over { border-color: var(--vc-accent); background: var(--vc-accent-soft); }
+  .has { border-style: solid; border-color: var(--vc-ok); background: var(--vc-ok-soft); color: var(--vc-fg); }
+  .disabled { opacity: .45; cursor: default; }
+  .native { position: absolute; inset: 0; opacity: 0; cursor: inherit; }
+  .drop:focus-within { box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  /* The file, in a round badge like an avatar. */
   .sheet {
     flex: none;
-    width: 28px;
-    height: 28px;
+    width: var(--vc-avatar);
+    height: var(--vc-avatar);
+    padding: 9px;
+    border-radius: 50%;
+    background: var(--vc-surface);
     fill: none;
-    stroke: currentColor;
-    stroke-width: 1.4;
+    stroke: var(--vc-accent);
+    stroke-width: 1.6;
     stroke-linejoin: round;
   }
-  .tick { stroke: var(--vc-ok); stroke-width: 2; stroke-linecap: round; }
+  .tick { stroke: var(--vc-ok); stroke-width: 2.2; stroke-linecap: round; }
   .text { display: flex; flex-direction: column; min-width: 0; }
-  .name {
-    overflow: hidden;
-    color: var(--vc-fg);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .name { overflow: hidden; color: var(--vc-fg); text-overflow: ellipsis; white-space: nowrap; }
 </style>
