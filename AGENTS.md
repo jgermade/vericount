@@ -44,6 +44,10 @@ Workflow:
 2. While working, append decisions, progress, open questions and next steps to the matching WIP record, or create a new one.
 3. Start each appended entry with a heading that includes the date, e.g. `## 2026-11-11: Short title`.
 
+## Code organisation
+
+Code is organised by domain: access, company, contacts, invoices and aeat, with the same folders in `crates/server/src` and `web/src` (see the Layout section of the README). A domain folder holds its data access, its rules, its HTTP routes (`api.rs`) and, in the client, its types, endpoints and screens. What every domain uses lives outside them (`api.rs`, `error.rs`, `events.rs`, `config.rs` on the server; `app/`, `i18n/`, `theme/` in the client). New code goes in the folder of its domain; code that two domains need goes in the one that owns the data, and the other imports it.
+
 ## Frontend
 
 The web client (`web/`) is written with jq79 and TypeScript:

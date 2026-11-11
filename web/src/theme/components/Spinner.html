@@ -1,0 +1,38 @@
+<script :setup="{ label = '' }: SpinnerProps" lang="ts">
+  // Waiting: three blocks of the chain lighting up in turn. `label` says
+  // what for, to a screen reader.
+  //
+  //   <Spinner :label="t.loading" />
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface SpinnerProps {
+    label?: string
+  }
+</script>
+
+<span class="spinner" role="status" :aria-label="label || null">
+  <span class="block"></span><span class="block"></span><span class="block"></span>
+</span>
+
+<style scoped>
+  .spinner {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    vertical-align: middle;
+  }
+  .block {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--vc-accent);
+    opacity: .25;
+    animation: pulse calc(var(--vc-duration-slow) * 3) var(--vc-ease) infinite;
+  }
+  .block:nth-child(2) { animation-delay: var(--vc-duration-slow); }
+  .block:nth-child(3) { animation-delay: calc(var(--vc-duration-slow) * 2); }
+  @keyframes pulse {
+    33% { opacity: 1; transform: translateY(-2px); }
+    66% { opacity: .25; transform: none; }
+  }
+</style>

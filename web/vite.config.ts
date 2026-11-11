@@ -6,14 +6,24 @@ export default defineConfig({
   // `script-src 'self'` without `unsafe-eval`.
   plugins: [jq79({ safeEval: true })],
   build: {
+    // The app, and the design system's demo at /design/.
+    rollupOptions: {
+      input: { app: "index.html", design: "design/index.html" },
+    },
     // No inlined assets: `data:` URLs are not allowed by the CSP.
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },
   },
+  // The dependency scan does not understand the `.html` components, and
+  // there is nothing to pre-bundle.
+  optimizeDeps: { noDiscovery: true },
   server: {
+    // The Host header is kept: the server refuses state-changing requests
+    // whose Origin does not match it (CSRF), and Vite's string shorthand
+    // rewrites it to the target's.
     proxy: {
-      "/api": "http://127.0.0.1:8080",
-      "/healthz": "http://127.0.0.1:8080",
+      "/api": { target: "http://127.0.0.1:8080", changeOrigin: false },
+      "/healthz": { target: "http://127.0.0.1:8080", changeOrigin: false },
     },
   },
 })

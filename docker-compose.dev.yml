@@ -1,0 +1,37 @@
+# Services for local development and tests, used by `make up` and
+# `make test`: PostgreSQL and Mailpit, an SMTP server that keeps what it
+# receives and shows it at http://127.0.0.1:8025. Only for development:
+# the passwords are fixed and the ports listen on 127.0.0.1.
+
+name: vericount-dev
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: vericount
+      # Superuser in the postgres image: runs the migrations, and the tests
+      # create their temporary databases with it.
+      POSTGRES_USER: vericount_owner
+      POSTGRES_PASSWORD: vericount_owner
+      # Password of the server's login role, created by docker/initdb.
+      VERICOUNT_DB_PASSWORD: vericount
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5433}:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vericount_owner -d vericount"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - "127.0.0.1:${DEV_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${DEV_MAILPIT_PORT:-8025}:8025"
+
+volumes:
+  db:

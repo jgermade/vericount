@@ -2,17 +2,8 @@
 
 use std::{env, net::SocketAddr};
 
-use vericount_core::{invoice, qr::AeatEnvironment};
+use vericount_core::{aeat::Party, invoice, qr::AeatEnvironment};
 use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
-
-/// The company that issues the invoices, as stored in the `company` table.
-#[derive(Debug, Clone)]
-pub struct Issuer {
-    pub nif: String,
-    pub name: String,
-    /// One-line address, printed on invoices.
-    pub address: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -129,59 +120,106 @@ pub fn aeat_endpoint(
     }
 }
 
-/// Settings for sending records to the AEAT. Sending is off unless
-/// `VERICOUNT_AEAT_SUBMIT=1`.
-#[derive(Debug, Clone)]
-pub struct Submission {
-    pub endpoint: String,
-    /// Path of a PEM file with the client certificate and its key.
-    pub identity_pem_path: Option<String>,
-    pub producer_name: String,
-    pub producer_nif: String,
-    pub installation_number: String,
-    /// Name and NIF of whoever submits on behalf of the company, e.g.
-    /// under a power of attorney registered at the AEAT.
-    pub representative: Option<(String, String)>,
+/// Key that encrypts the stored AEAT certificate. Not printable, so it
+/// cannot end up in a log.
+#[derive(Clone)]
+pub struct SecretKey(pub [u8; 32]);
+
+impl std::fmt::Debug for SecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SecretKey(..)")
+    }
 }
 
-impl Submission {
-    pub fn from_env(environment: AeatEnvironment) -> Result<Option<Self>, String> {
-        if var("VERICOUNT_AEAT_SUBMIT").as_deref() != Ok("1") {
-            return Ok(None);
+impl SecretKey {
+    /// 64 hexadecimal digits, e.g. from `openssl rand -hex 32`.
+    pub fn parse(hex: &str) -> Result<Self, String> {
+        let hex = hex.trim();
+        let error = || "VERICOUNT_SECRET_KEY must be 64 hexadecimal digits".to_owned();
+        if hex.len() != 64 || !hex.is_ascii() {
+            return Err(error());
         }
-        Ok(Some(Self {
-            endpoint: aeat_endpoint(environment, var("VERICOUNT_AEAT_ENDPOINT").ok().as_deref())?,
-            identity_pem_path: var("VERICOUNT_AEAT_IDENTITY_PEM").ok(),
-            producer_name: invoice::validate_text(
+        let mut key = [0; 32];
+        for (index, byte) in key.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).map_err(|_| error())?;
+        }
+        Ok(Self(key))
+    }
+}
+
+/// Settings for sending records to the AEAT. Which records are sent, and
+/// with which certificate, depends on the mode, kept in the database.
+#[derive(Debug, Clone)]
+pub struct AeatSettings {
+    /// Where live records go: the AEAT pre-production service or
+    /// production.
+    pub environment: AeatEnvironment,
+    /// Service URL for live records, only in the test environment, e.g. a
+    /// mock in development.
+    pub endpoint_override: Option<String>,
+    /// Producer of the software, declared in every record. Required for
+    /// live mode.
+    pub producer: Option<Party>,
+    /// Who submits on behalf of the company, when declared.
+    pub representative: Option<Party>,
+    pub installation_number: String,
+    /// Required to upload a certificate.
+    pub secret_key: Option<SecretKey>,
+}
+
+impl AeatSettings {
+    /// Nothing configured, in the test environment.
+    pub fn test() -> Self {
+        Self {
+            environment: AeatEnvironment::Test,
+            endpoint_override: None,
+            producer: None,
+            representative: None,
+            installation_number: "1".to_owned(),
+            secret_key: None,
+        }
+    }
+
+    pub fn from_env(environment: AeatEnvironment) -> Result<Self, String> {
+        let endpoint_override = var("VERICOUNT_AEAT_ENDPOINT").ok();
+        // Checked now, so a production configuration with an override does
+        // not start at all.
+        aeat_endpoint(environment, endpoint_override.as_deref())?;
+        Ok(Self {
+            environment,
+            endpoint_override,
+            producer: party(
                 "VERICOUNT_SOFTWARE_PRODUCER_NAME",
-                &required("VERICOUNT_SOFTWARE_PRODUCER_NAME")?,
-            )
-            .map_err(|e| e.to_string())?,
-            producer_nif: invoice::validate_tax_id(
                 "VERICOUNT_SOFTWARE_PRODUCER_NIF",
-                &required("VERICOUNT_SOFTWARE_PRODUCER_NIF")?,
-            )
-            .map_err(|e| e.to_string())?,
+            )?,
+            representative: party(
+                "VERICOUNT_AEAT_REPRESENTATIVE_NAME",
+                "VERICOUNT_AEAT_REPRESENTATIVE_NIF",
+            )?,
             installation_number: var("VERICOUNT_INSTALLATION_NUMBER")
                 .unwrap_or_else(|_| "1".to_owned()),
-            representative: match (
-                var("VERICOUNT_AEAT_REPRESENTATIVE_NAME").ok(),
-                var("VERICOUNT_AEAT_REPRESENTATIVE_NIF").ok(),
-            ) {
-                (None, None) => None,
-                (Some(name), Some(nif)) => Some((
-                    invoice::validate_text("VERICOUNT_AEAT_REPRESENTATIVE_NAME", &name)
-                        .map_err(|e| e.to_string())?,
-                    invoice::validate_tax_id("VERICOUNT_AEAT_REPRESENTATIVE_NIF", &nif)
-                        .map_err(|e| e.to_string())?,
-                )),
-                _ => {
-                    return Err("set both VERICOUNT_AEAT_REPRESENTATIVE_NAME and \
-                         VERICOUNT_AEAT_REPRESENTATIVE_NIF, or neither"
-                        .to_owned())
-                }
-            },
-        }))
+            secret_key: var("VERICOUNT_SECRET_KEY")
+                .ok()
+                .map(|key| SecretKey::parse(&key))
+                .transpose()?,
+        })
+    }
+
+    /// URL that live records are sent to.
+    pub fn live_endpoint(&self) -> Result<String, String> {
+        aeat_endpoint(self.environment, self.endpoint_override.as_deref())
+    }
+}
+
+/// A name and NIF from two variables, set together or not at all.
+fn party(name_var: &str, nif_var: &str) -> Result<Option<Party>, String> {
+    match (var(name_var).ok(), var(nif_var).ok()) {
+        (None, None) => Ok(None),
+        (Some(name), Some(nif)) => Ok(Some(Party {
+            name: invoice::validate_text(name_var, &name).map_err(|e| e.to_string())?,
+            nif: invoice::validate_tax_id(nif_var, &nif).map_err(|e| e.to_string())?,
+        })),
+        _ => Err(format!("set both {name_var} and {nif_var}, or neither")),
     }
 }
 

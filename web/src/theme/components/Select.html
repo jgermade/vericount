@@ -1,0 +1,76 @@
+<script :setup="{ model = '', options = [], placeholder = '', required = false, disabled = false, invalid = false }: SelectProps" lang="ts">
+  // One choice from a list: a customer, a series. The native control, so
+  // the phone shows its own picker, drawn as the theme's box. `options` are
+  // `{ value, label }`; `placeholder` is an empty first option that cannot
+  // be chosen again.
+  //
+  //   <Select :model="form.contact_id" :options="customers" :placeholder="t.form.chooseCustomer" required />
+  //
+  // The value goes up through `:model` and as `change`, as a string. Part
+  // of the theme: imports nothing, draws only with tokens.
+  interface Option { value: string | number; label: string }
+  interface SelectProps {
+    model?: string | number
+    options?: Option[]
+    placeholder?: string
+    required?: boolean | ""
+    disabled?: boolean | ""
+    invalid?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  const chosen = (event: Event) => {
+    const value = (event.target as HTMLSelectElement).value
+    $updateModel(value)
+    $emit("change", value)
+  }
+</script>
+
+<span class="box" :class.invalid="flag(invalid)">
+  <select class="select"
+          :required="flag(required)"
+          :disabled="flag(disabled)"
+          :aria-invalid="flag(invalid) ? 'true' : null"
+          @change="chosen($event)">
+    <option :if="placeholder" value="" disabled :selected="model === '' || model == null">{{ placeholder }}</option>
+    <option :each="option in options" :key="option.value" :value="option.value"
+            :selected="String(option.value) === String(model)">{{ option.label }}</option>
+  </select>
+  <svg class="caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+</span>
+
+<style scoped>
+  .box {
+    position: relative;
+    display: block;
+  }
+  .select {
+    width: 100%;
+    min-height: var(--vc-control-md);
+    padding: 0 calc(var(--vc-space-4) * 2 + 12px) 0 var(--vc-space-4);
+    border: 2px solid transparent;
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-field);
+    color: var(--vc-fg);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    font-weight: var(--vc-weight-medium);
+    appearance: none;
+    cursor: pointer;
+    transition: border-color var(--vc-duration-fast) ease, background var(--vc-duration-fast) ease;
+  }
+  .select:focus { border-color: var(--vc-focus); background: var(--vc-surface); outline: none; }
+  .select:disabled { background: var(--vc-field-off); color: var(--vc-fg-subtle); cursor: default; }
+  .invalid .select { border-color: var(--vc-bad); background: var(--vc-bad-soft); }
+  .caret {
+    position: absolute;
+    top: 50%;
+    right: var(--vc-space-4);
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    fill: none;
+    stroke: var(--vc-fg-muted);
+    stroke-width: 2;
+    pointer-events: none;
+  }
+</style>

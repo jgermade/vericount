@@ -1,0 +1,79 @@
+<script :setup="{ model = false, disabled = false }: CheckboxProps" lang="ts">
+  // A yes or no, with its label in the slot: "Cliente", "Proveedor". The
+  // box fills with the accent when ticked. The value goes up through
+  // `:model` and as `change`.
+  //
+  //   <Checkbox :model="contact.is_customer">{{ t.contacts.customer }}</Checkbox>
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface CheckboxProps {
+    model?: boolean
+    disabled?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  const toggled = (event: Event) => {
+    const value = (event.target as HTMLInputElement).checked
+    $updateModel(value)
+    $emit("change", value)
+  }
+</script>
+
+<label class="check" :class.disabled="flag(disabled)">
+  <input type="checkbox" class="native" :checked="!!model" :disabled="flag(disabled)" @change="toggled($event)">
+  <span class="box" aria-hidden="true">
+    <svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" /></svg>
+  </span>
+  <span class="text"><slot></slot></span>
+</label>
+
+<style scoped>
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--vc-space-3);
+    min-height: var(--vc-control-md);
+    color: var(--vc-fg);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    cursor: pointer;
+  }
+  .disabled { color: var(--vc-fg-subtle); cursor: default; }
+  /* The real input stays, for the keyboard and screen readers; the box is
+     drawn after it. */
+  .native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+  .box {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--vc-border-strong);
+    border-radius: 7px;
+    background: var(--vc-field);
+    transition: background var(--vc-duration-fast) ease, border-color var(--vc-duration-fast) ease;
+  }
+  .box svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: var(--vc-on-accent);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 16;
+    stroke-dashoffset: 16;
+    transition: stroke-dashoffset var(--vc-duration) var(--vc-ease-out);
+  }
+  .native:checked + .box {
+    border-color: var(--vc-accent);
+    background: var(--vc-accent);
+  }
+  .native:checked + .box svg { stroke-dashoffset: 0; }
+  .native:focus-visible + .box { box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .native:disabled + .box { background: var(--vc-field-off); border-color: var(--vc-border); }
+</style>

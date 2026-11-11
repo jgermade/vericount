@@ -1,0 +1,57 @@
+<script :setup="{ label = '', hint = '', tone = 'neutral' }: TileProps" lang="ts">
+  // One figure with what it is: invoiced this quarter, VAT, invoices issued.
+  // The figure goes in the slot (an Amount, or a plain number); `hint` is a
+  // line under it. `tone` colours the hint, to point at a figure that needs
+  // attention.
+  //
+  //   <Tile :label="t.home.invoiced"><Amount :amount="summary.total_base" /></Tile>
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface TileProps {
+    label?: string
+    hint?: string
+    tone?: "neutral" | "accent" | "ok" | "warn" | "bad"
+  }
+</script>
+
+<div class="tile" :class="'tone-' + tone">
+  <span class="label">{{ label }}</span>
+  <span class="figure"><slot></slot></span>
+  <span :if="hint" class="hint">{{ hint }}</span>
+</div>
+
+<style scoped>
+  .tile {
+    --hint: var(--vc-fg-muted);
+    display: flex;
+    flex-direction: column;
+    gap: var(--vc-space-1);
+    min-width: 0;
+    padding: var(--vc-space-4);
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-surface);
+    font-family: var(--vc-font-sans);
+  }
+  .tone-accent { --hint: var(--vc-accent); }
+  .tone-ok { --hint: var(--vc-ok); }
+  .tone-warn { --hint: var(--vc-warn); }
+  .tone-bad { --hint: var(--vc-bad); }
+  .label {
+    color: var(--vc-fg-muted);
+    font-size: var(--vc-text-sm);
+  }
+  .figure {
+    color: var(--vc-fg);
+    font-family: var(--vc-font-display);
+    font-size: var(--vc-text-xl);
+    font-variant-numeric: var(--vc-figures);
+    font-weight: var(--vc-weight-bold);
+    letter-spacing: var(--vc-tracking-display);
+    line-height: var(--vc-leading-tight);
+  }
+  .hint {
+    color: var(--hint);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
+  }
+</style>

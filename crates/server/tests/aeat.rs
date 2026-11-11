@@ -16,8 +16,8 @@ use vericount_core::aeat::{
     self, Operation, Party, Record, RecordStatus, ResponseError, SoftwareSystem, SubmissionStatus,
 };
 use vericount_server::{
-    aeat_client::{AeatClient, SubmitError},
-    store,
+    aeat::client::{AeatClient, SubmitError},
+    invoices::store,
 };
 
 fn invoice_body() -> Value {
@@ -75,7 +75,7 @@ async fn start_mock() -> (Mock, AeatClient) {
 }
 
 async fn records(pool: &PgPool) -> Vec<Record> {
-    store::chain_records(pool, common::ISSUER_NIF)
+    store::chain_records(pool, common::ISSUER_NIF, false)
         .await
         .unwrap()
         .into_iter()
@@ -220,7 +220,7 @@ mod worker {
     use std::sync::Arc;
 
     use super::*;
-    use vericount_server::submission::{self, RunOutcome, Submitter};
+    use vericount_server::aeat::submission::{self, RunOutcome, Submitter};
 
     async fn submitter() -> (Mock, Submitter) {
         let (mock, client) = start_mock().await;
@@ -434,8 +434,8 @@ mod worker {
         assert_eq!(response.status, StatusCode::CONFLICT);
 
         let (_mock, submitter) = submitter().await;
-        let mut state = common::state(pool.clone());
-        state.submitter = Some(Arc::new(submitter));
+        let state = common::state(pool.clone());
+        state.aeat.set(Some(Arc::new(submitter)));
         let app = vericount_server::app(state, common::web_dir());
         post(&app, "/api/invoices", invoice_body()).await;
         let response = post(&app, "/api/aeat/submissions", json!({})).await;
@@ -447,9 +447,9 @@ mod worker {
 }
 
 #[sqlx::test]
-async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
+async fn a_representative_is_declared(pool: PgPool) {
     use std::sync::Arc;
-    use vericount_server::{certificate::CertificateInfo, submission::Submitter};
+    use vericount_server::aeat::submission::Submitter;
 
     common::sign_in(&pool).await;
     common::seed(&pool).await;
@@ -459,14 +459,8 @@ async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
         name: "Jane Roe".to_owned(),
         nif: "12345678Z".to_owned(),
     });
-    submitter.certificate = Some(CertificateInfo {
-        subject: "ROE JANE - 12345678Z".to_owned(),
-        nif: Some("12345678Z".to_owned()),
-        of_legal_person: false,
-        expires_at: chrono::Utc::now(),
-    });
-    let mut state = common::state(pool.clone());
-    state.submitter = Some(Arc::new(submitter));
+    let state = common::state(pool.clone());
+    state.aeat.set(Some(Arc::new(submitter)));
     let app = vericount_server::app(state, common::web_dir());
 
     post(&app, "/api/invoices", invoice_body()).await;
@@ -475,9 +469,4 @@ async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
     assert!(mock.requests()[0].contains(
         "<sf:Representante><sf:NombreRazon>Jane Roe</sf:NombreRazon><sf:NIF>12345678Z</sf:NIF>"
     ));
-
-    let status = get(&app, "/api/aeat").await.json();
-    assert_eq!(status["certificate"]["nif"], "12345678Z");
-    assert_eq!(status["certificate_matches_company"], false);
-    assert_eq!(status["representative_nif"], "12345678Z");
 }

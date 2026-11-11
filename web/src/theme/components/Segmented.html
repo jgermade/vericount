@@ -1,0 +1,58 @@
+<script :setup="{ model = '', options = [], label = '' }: SegmentedProps" lang="ts">
+  // A few choices side by side, one of them on: a quarter, all/pending
+  // invoices, customer/supplier. `options` are `{ value, label }`; the value
+  // goes up through `:model` and as `change`. `label` names the group for a
+  // screen reader.
+  //
+  //   <Segmented :model="quarter" :options="quarters" :label="t.home.quarterPicker" />
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface Option { value: string; label: string }
+  interface SegmentedProps {
+    model?: string
+    options?: Option[]
+    label?: string
+  }
+  const choose = (value: string) => {
+    if (value === model) return
+    $updateModel(value)
+    $emit("change", value)
+  }
+</script>
+
+<div class="segmented" role="radiogroup" :aria-label="label || null">
+  <button :each="option in options" :key="option.value" type="button" class="segment"
+          role="radio" :aria-checked="option.value === model ? 'true' : 'false'"
+          :class.on="option.value === model" @click="choose(option.value)">{{ option.label }}</button>
+</div>
+
+<style scoped>
+  .segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 4px;
+    border-radius: var(--vc-radius-full);
+    background: var(--vc-sunken);
+    font-family: var(--vc-font-sans);
+  }
+  .segment {
+    min-height: calc(var(--vc-control-sm) - 4px);
+    padding: 0 var(--vc-space-4);
+    border: 0;
+    border-radius: var(--vc-radius-full);
+    background: transparent;
+    color: var(--vc-fg-muted);
+    font-family: inherit;
+    font-size: var(--vc-text-sm);
+    font-weight: var(--vc-weight-bold);
+    cursor: pointer;
+    transition: background var(--vc-duration-fast) ease, color var(--vc-duration-fast) ease;
+  }
+  .segment:hover:not(.on) { color: var(--vc-fg); }
+  .segment:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .on {
+    background: var(--vc-surface);
+    color: var(--vc-fg);
+    box-shadow: var(--vc-shadow-md);
+  }
+</style>

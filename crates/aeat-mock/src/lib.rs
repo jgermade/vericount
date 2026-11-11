@@ -1,5 +1,6 @@
-//! Mock of the AEAT Veri*factu record submission service, for tests and
-//! local development. It must never be used in production.
+//! Mock of the AEAT Veri*factu record submission service, for tests,
+//! local development and the practice mode of the server, whose invoices
+//! are not real. Real records must never be sent to it.
 //!
 //! What it checks, per request:
 //!
@@ -95,6 +96,27 @@ impl Mock {
     pub fn with_schema_validation(mut self, schemas: impl Into<PathBuf>) -> Self {
         self.schemas = Some(schemas.into());
         self
+    }
+
+    /// Continues from what an earlier run of the mock received, which is
+    /// otherwise lost when its process ends: the hash of the issuer's last
+    /// record and the invoices it registered and cancelled.
+    pub fn restore(
+        &self,
+        issuer_nif: &str,
+        last_hash: &str,
+        registered: impl IntoIterator<Item = String>,
+        cancelled: impl IntoIterator<Item = String>,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        if !last_hash.is_empty() {
+            inner
+                .last_hash
+                .insert(issuer_nif.to_owned(), last_hash.to_owned());
+        }
+        let key = |series_number| (issuer_nif.to_owned(), series_number);
+        inner.registered.extend(registered.into_iter().map(key));
+        inner.cancelled.extend(cancelled.into_iter().map(key));
     }
 
     /// Makes the next request fail. Faults are consumed in order.

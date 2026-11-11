@@ -1,0 +1,68 @@
+<script :setup="{ tone = 'bad', confirm = '', cancel = '', busy = false }: ConfirmProps" lang="ts">
+  // The question before something that cannot be undone, in place, where
+  // the button was: cancel an invoice, remove a user, go live. The question
+  // in the slot, two answers under it. Emits `confirm` or `cancel`; the
+  // owner decides when it goes away.
+  //
+  //   <Confirm :if="confirmingCancel" :confirm="t.detail.confirm" :cancel="t.detail.keep"
+  //            @confirm="cancelInvoice()" @cancel="confirmingCancel = false">
+  //     {{ t.detail.confirmCancel(invoice.series_number) }}
+  //   </Confirm>
+  //
+  // The answer that keeps things as they are gets the focus, so Enter does
+  // no harm. Part of the theme: imports nothing, draws only with tokens.
+  interface ConfirmProps {
+    tone?: "bad" | "warn" | "accent"
+    confirm?: string
+    cancel?: string
+    busy?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  await $mounted()
+  $self<HTMLButtonElement>(".keep")?.focus()
+</script>
+
+<div class="confirm" :class="'tone-' + tone" role="alertdialog">
+  <div class="question"><slot></slot></div>
+  <div class="answers">
+    <button type="button" class="answer go" :disabled="flag(busy)" @click="$emit('confirm')">{{ confirm }}</button>
+    <button type="button" class="answer keep" :disabled="flag(busy)" @click="$emit('cancel')">{{ cancel }}</button>
+  </div>
+</div>
+
+<style scoped>
+  .confirm {
+    --ink: var(--vc-bad);
+    padding: var(--vc-space-5);
+    border-radius: var(--vc-radius-lg);
+    background: var(--vc-surface);
+    box-shadow: var(--vc-shadow-md);
+    color: var(--vc-fg);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    animation: arrive var(--vc-duration) var(--vc-ease-out);
+  }
+  .tone-warn { --ink: var(--vc-warn); }
+  .tone-accent { --ink: var(--vc-accent); }
+  .question { margin-bottom: var(--vc-space-4); font-weight: var(--vc-weight-bold); }
+  .answers { display: flex; flex-wrap: wrap; gap: var(--vc-space-2); }
+  .answer {
+    flex: 1;
+    min-height: var(--vc-control-md);
+    padding: 0 var(--vc-space-5);
+    border: 0;
+    border-radius: var(--vc-radius-full);
+    background: var(--vc-sunken);
+    color: var(--vc-fg);
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: var(--vc-weight-bold);
+    cursor: pointer;
+  }
+  .go { background: var(--ink); color: var(--vc-on-accent); }
+  .answer:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .answer:disabled { opacity: .45; cursor: default; }
+  @keyframes arrive {
+    from { opacity: 0; transform: translateY(6px) scale(.98); }
+  }
+</style>

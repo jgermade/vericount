@@ -6,16 +6,16 @@ Bookkeeping for a Spanish SL with Veri*factu compliance. The name joins *verific
 
 ## Status
 
-Issued invoices can be created, listed and cancelled by a signed-in user. There are no passwords: invited users sign up and sign in with a code sent to their email, or with a passkey. Each one gets a Veri*factu billing record with a chained hash, stored in insert-only tables, and records are sent to the AEAT in order when sending is enabled. So far they have only been sent to the mock in `crates/aeat-mock`, never to the AEAT itself.
+Issued invoices can be created, listed and cancelled by a signed-in user. There are no passwords: invited users sign up and sign in with a code sent to their email, or with a passkey. Each one gets a Veri*factu billing record with a chained hash, stored in insert-only tables, and records are sent in order. An installation starts in practice mode, sending to a mock of the AEAT inside the server; live mode, turned on in Settings after uploading a certificate there, sends to the AEAT (see [Practice and live modes](#practice-and-live-modes)). So far records have only been sent to the mock in `crates/aeat-mock`, never to the AEAT itself.
 
 ## Install
 
-Three ways, all from the same [releases](https://github.com/jgermade/vericounts/releases): a static binary for Linux (x86_64 and aarch64) with the web client, a Docker image and a Helm chart. Each needs PostgreSQL and, in production, an SMTP server and HTTPS in front (passkeys need a domain name).
+Three ways, all from the same [releases](https://github.com/jgermade/vericount/releases): a static binary for Linux (x86_64 and aarch64) with the web client, a Docker image and a Helm chart. Each needs PostgreSQL and, in production, an SMTP server and HTTPS in front (passkeys need a domain name).
 
 ### One line, on a Linux server with systemd
 
 ```bash
-curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
+curl -fsSL https://github.com/jgermade/vericount/releases/latest/download/setup.sh | sudo bash
 ```
 
 A wizard (in Spanish) offers to **install** or, if vericount is already there, to **reinstall/update** or **uninstall**:
@@ -31,7 +31,7 @@ Without questions: `sudo bash setup.sh install --yes` (answers from environment 
 [`docker-compose.yml`](docker-compose.yml) runs PostgreSQL, the migrations and the server (`ghcr.io/jgermade/vericount`, a distroless image of about 25 MB with the static binary):
 
 ```bash
-cp .env.example .env   # set the two passwords, the public URL and SMTP
+cp .env.example .env   # set the two passwords, the secret key, the public URL and SMTP
 ```
 
 ```bash
@@ -42,14 +42,14 @@ docker compose up -d
 docker compose run --rm app invite you@example.com
 ```
 
-The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT certificate goes in `./secrets` (see `.env.example`). `docker build -t vericount .` builds the same image from source.
+The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT certificate is uploaded in Settings. `docker build -t vericount .` builds the same image from source.
 
 ### Kubernetes (Helm)
 
 The chart in [`charts/vericount`](charts/vericount) (also attached to each release) runs one replica, with the migrations in an init container. PostgreSQL is external, e.g. an operator such as PGO with pgBackRest:
 
 ```bash
-helm install vericount https://github.com/jgermade/vericounts/releases/download/vX.Y.Z/vericount-X.Y.Z.tgz \
+helm install vericount https://github.com/jgermade/vericount/releases/download/vX.Y.Z/vericount-X.Y.Z.tgz \
   --set publicUrl=https://books.example.com \
   --set database.url=postgres://vericount:...@db/vericount \
   --set database.migrationUrl=postgres://vericount_owner:...@db/vericount \
@@ -71,7 +71,20 @@ Run **Actions → Release → Run workflow** on `main` and choose `patch`, `mino
 
 ## Development
 
-Requires Rust (pinned in `rust-toolchain.toml`), Node 22 and PostgreSQL 16.
+Requires Rust (pinned in `rust-toolchain.toml`), Node 22 and PostgreSQL 16. With Docker, the [`Makefile`](Makefile) runs PostgreSQL and Mailpit for you ([`docker-compose.dev.yml`](docker-compose.dev.yml), on `127.0.0.1` with fixed development passwords):
+
+| Command | What it does |
+|---|---|
+| `make up` | Starts PostgreSQL and Mailpit, migrates, then runs the AEAT mock, the server and the client with hot reload until Ctrl+C. Open `http://localhost:5173`; mail, sign-in codes included, is at `http://127.0.0.1:8025`. Live mode, too, sends to a mock, never to the AEAT |
+| `make invite EMAIL=you@example.com` | Invites a user, who signs up with the code sent to Mailpit |
+| `make test` | Builds the client and runs the tests against that PostgreSQL and Mailpit |
+| `make build` | Builds the client (`web/dist`) and the release server (`target/release/vericount-server`) |
+| `make lint` | `cargo fmt --check`, clippy, and shellcheck and `helm lint` if installed; `make check` runs it and the tests |
+| `make down` / `make reset` | Stops the services / also deletes the development database |
+
+The ports can be changed, e.g. `make up DEV_DB_PORT=5434` (also `DEV_WEB_PORT`, `DEV_SERVER_PORT`, `DEV_AEAT_PORT`, `DEV_SMTP_PORT`, `DEV_MAILPIT_PORT`).
+
+Without the Makefile:
 
 ```bash
 # Web client (output in web/dist)
@@ -114,7 +127,7 @@ mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025
 VERICOUNT_SMTP_URL=smtp://127.0.0.1:1025 VERICOUNT_MAIL_FROM='vericount <no-reply@example.com>' cargo run
 ```
 
-To try the AEAT flow locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas cargo run -p vericount-aeat-mock` and point `VERICOUNT_AEAT_ENDPOINT` to the URL it prints.
+Practice mode needs nothing: the server runs its own mock. To try live mode locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas cargo run -p vericount-aeat-mock` and point `VERICOUNT_AEAT_ENDPOINT` to the URL it prints (`make up` does both).
 
 `npm run dev` in `web/` serves the client with hot reload and proxies `/api` to the server.
 
@@ -123,14 +136,13 @@ Configuration (environment variables; an empty value counts as unset):
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | required | PostgreSQL connection |
-| `VERICOUNT_AEAT_ENV` | `test` | `test` or `production`; selects the QR URL |
-| `VERICOUNT_AEAT_SUBMIT` | off | Set to `1` to send records to the AEAT |
-| `VERICOUNT_AEAT_ENDPOINT` | official | Service URL, e.g. the mock; refused in production |
-| `VERICOUNT_AEAT_IDENTITY_PEM` | none | PEM file with the client certificate and key |
+| `VERICOUNT_SECRET_KEY` | none; required to upload a certificate | 64 hexadecimal digits (`openssl rand -hex 32`) that encrypt the uploaded certificate |
+| `VERICOUNT_AEAT_ENV` | `test` | Where live records go: `test` (AEAT pre-production) or `production`; also selects the QR URL of live invoices |
+| `VERICOUNT_AEAT_ENDPOINT` | official | Service URL for live records, e.g. a mock; refused in production |
 | `VERICOUNT_AEAT_REPRESENTATIVE_NAME` | none | Who submits on behalf of the company; set together with the NIF |
 | `VERICOUNT_AEAT_REPRESENTATIVE_NIF` | none | NIF of that representative |
-| `VERICOUNT_SOFTWARE_PRODUCER_NAME` | required to send | Producer of the software, declared in every record |
-| `VERICOUNT_SOFTWARE_PRODUCER_NIF` | required to send | NIF of the producer |
+| `VERICOUNT_SOFTWARE_PRODUCER_NAME` | required for live mode | Producer of the software, declared in every record |
+| `VERICOUNT_SOFTWARE_PRODUCER_NIF` | required for live mode | NIF of the producer |
 | `VERICOUNT_INSTALLATION_NUMBER` | `1` | Identifies this installation in every record |
 | `VERICOUNT_PUBLIC_URL` | `http://localhost:8080` | Where users open the client; passkeys are bound to its host, invitations link to it. Must be `https` outside `localhost` |
 | `VERICOUNT_SMTP_URL` | none; required in production | SMTP server, e.g. `smtps://user:password@smtp.example.com` or `smtp://127.0.0.1:1025` |
@@ -141,6 +153,19 @@ Configuration (environment variables; an empty value counts as unset):
 
 After signing in for the first time, enter the company data, a series and a customer in the interface; nothing can be invoiced before that.
 
+## Practice and live modes
+
+Every installation starts in **practice mode**. Invoices can be issued to learn the application, but they are not real: they are marked "de prueba" and their records go to a mock of the AEAT that runs inside the server. The company NIF can still be changed.
+
+**Live mode** is turned on in Settings, once and for good:
+
+1. Upload the certificate (below). It is stored in the database, encrypted with `VERICOUNT_SECRET_KEY`.
+2. Press "Activar modo real" and confirm. The server also needs `VERICOUNT_SOFTWARE_PRODUCER_NAME` and `_NIF`; Settings says what is missing.
+
+From then on invoices are real and their records go to the AEAT (`VERICOUNT_AEAT_ENV`: its pre-production service with `test`, the real one with `production`). Numbering and the chain of records start again, practice invoices are no longer shown (they stay in the database, which is insert-only), and the NIF is locked. Without a certificate, live records wait until one is uploaded.
+
+Keep a copy of `VERICOUNT_SECRET_KEY` with the database backups: without it the stored certificate cannot be read and must be uploaded again. The installer generates it in `/etc/vericount/vericount.env`, the Helm chart in its Secret; with Docker, set it in `.env`.
+
 ## AEAT certificate
 
 The AEAT service requires a client certificate. Two kinds work, and the Settings screen tells which one is in use and when it expires:
@@ -148,20 +173,32 @@ The AEAT service requires a client certificate. Two kinds work, and the Settings
 - **A certificate of the company** (a "representative of a legal person" certificate). Its NIF is the company's; nothing else is needed.
 - **A personal certificate under a power of attorney** ("apoderamiento"). The company must have empowered its holder at the AEAT to submit billing records. Set `VERICOUNT_AEAT_REPRESENTATIVE_NAME` and `VERICOUNT_AEAT_REPRESENTATIVE_NIF` to declare the holder as representative in every request.
 
-The server reads one PEM file with the certificate and its private key. Certificates usually come as `.p12` or `.pfx` files; convert them with:
-
-```bash
-openssl pkcs12 -in certificate.p12 -out identity.pem -nodes
-```
-
-Keep that file outside the repository, readable only by the server, and never commit it.
+Upload it in Settings: the `.p12` or `.pfx` file it was exported to, with its password, or a PEM file with the certificate and its private key. Uploading another one replaces it; removing it deletes it from the database.
 
 ## Layout
 
-- `crates/core`: domain logic without I/O (record hash, invoice totals, QR URL).
-- `crates/server`: Axum HTTP server, API, database access, migrations and security headers.
-- `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
-- `crates/aeat-mock`: mock of the AEAT record submission service, for tests and local development.
+The code is organised by domain: the same five domains on the server and in the client, so a change to one of them stays in one folder on each side.
+
+| Domain | What it is | Server (`crates/server/src`) | Client (`web/src`) | Tests (`crates/server/tests`) |
+|---|---|---|---|---|
+| Access | Users, sign-in with a code or a passkey, sessions | `access/`: `users.rs`, `sessions.rs`, `passkeys.rs`, `api.rs` | `access/`: `SignIn.html`, `AccessSettings.html`, `webauthn.ts` | `access.rs` |
+| Company | Company data and numbering series | `company/`: `store.rs`, `api.rs` | `company/`: `CompanySettings.html` | `company_and_contacts.rs` |
+| Contacts | Customers and suppliers | `contacts/`: `store.rs`, `api.rs` | `contacts/`: `Contacts.html` | `company_and_contacts.rs` |
+| Invoices | Invoices, billing records, the hash chain, practice and live modes, quarter totals | `invoices/`: `store.rs`, `api.rs` | `invoices/`: `Invoices.html`; `home/Home.html` | `invoices.rs` |
+| AEAT | Sending records: SOAP client, queue, practice mock, certificate | `aeat/`: `client.rs`, `submission.rs`, `service.rs`, `certificate.rs`, `api.rs` | `aeat/`: `AeatSettings.html` | `aeat.rs`, `aeat_modes.rs`, `aeat_certificates.rs` |
+
+In each domain folder, `mod.rs` says what it holds and which tables it owns, `store.rs` (or the files named after their subject) holds data access and rules, and `api.rs` its HTTP routes. In the client, each domain folder has its `types.ts`, its `api.ts` (endpoints) and its screens.
+
+Shared by every domain:
+
+- Server: `api.rs` (the router that puts the domains' routes together, and `ApiError`), `error.rs` (`StoreError`), `events.rs` (event log), `config.rs`, `security.rs` (headers, CSP), `mail.rs` and `mail/es.rs` (emails and their texts), `lib.rs` (`AppState`), `main.rs` (commands and the submission loop), `migrations/`.
+- Client: `app/` (the shell `App.html`, `http.ts` with the one `request` to the API, `api.ts` putting every domain's endpoints together, `errors.ts`, `app.css`), `settings/Settings.html` (one section per domain), `i18n/es.ts` (every text of the interface), `theme/` (the design system).
+
+Other crates and files:
+
+- `crates/core`: domain logic without I/O, already one module per subject: `invoice` (totals, validation), `hash` (Veri*factu record hash), `qr` (QR URL), `aeat` (the AEAT's XML messages), `xml`.
+- `web/src/theme`: the design system: `tokens.css` (every colour, size, font and motion, light and dark) and components that import nothing and draw only with those tokens. Its demo is at `/design/` (`http://localhost:5173/design/` with `make up`).
+- `crates/aeat-mock`: mock of the AEAT record submission service, for tests, local development and practice mode.
 - `aeat/schemas`: official AEAT WSDL and XSD files.
 - `setup.sh`, `Dockerfile`, `docker/`, `docker-compose.yml`, `charts/vericount`: installation and deployment.
 - `scripts/version.sh`: prints or bumps the version.

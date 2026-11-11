@@ -21,7 +21,9 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use vericount_core::qr::AeatEnvironment;
 use vericount_server::{
-    config::{self, Config, Issuer},
+    aeat::service::AeatService,
+    company::store::Issuer,
+    config::{self, AeatSettings, Config},
     mail::{Mail, Mailer},
     AppState,
 };
@@ -97,7 +99,8 @@ pub fn state_with_outbox(pool: PgPool) -> (AppState, Arc<Mutex<Vec<Mail>>>) {
             public_url,
         }),
         mailer: Arc::new(mailer),
-        submitter: None,
+        // Nothing is sent unless a test sets a submitter.
+        aeat: Arc::new(AeatService::new(AeatSettings::test(), None)),
     };
     (state, outbox)
 }
@@ -125,7 +128,7 @@ pub async fn sign_in(pool: &PgPool) {
          VALUES ($1, $2, now() + interval '1 hour')",
     )
     .bind(user_id)
-    .bind(vericount_server::auth::token_hash(TEST_TOKEN))
+    .bind(vericount_server::access::sessions::token_hash(TEST_TOKEN))
     .execute(pool)
     .await
     .unwrap();

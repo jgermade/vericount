@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # vericount installer for a Linux server with systemd (x86_64 or aarch64).
 #
-#   curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
+#   curl -fsSL https://github.com/jgermade/vericount/releases/latest/download/setup.sh | sudo bash
 #
 # Without arguments it runs a wizard: install, or, when vericount is
 # already installed, reinstall/update or uninstall. It can also run
@@ -27,7 +27,7 @@ set -euo pipefail
 # whatever the caller's umask.
 umask 022
 
-REPO=${VERICOUNT_REPO:-jgermade/vericounts}
+REPO=${VERICOUNT_REPO:-jgermade/vericount}
 PREFIX=/opt/vericount
 CONF_DIR=/etc/vericount
 ENV_FILE=$CONF_DIR/vericount.env
@@ -303,6 +303,20 @@ wait_healthy() {
     return 1
 }
 
+# The key that encrypts the AEAT certificate uploaded in the settings.
+# Generated once; settings from earlier versions get one too.
+ensure_secret_key() {
+    grep -q '^VERICOUNT_SECRET_KEY=' "$ENV_FILE" && return 0
+    local key
+    key=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+    [ ${#key} -eq 64 ] || die "no se puede generar la clave del certificado"
+    cat >>"$ENV_FILE" <<EOF
+# Encrypts the AEAT certificate uploaded in the settings. Keep a copy with
+# the database backups: the stored certificate cannot be read without it.
+VERICOUNT_SECRET_KEY='$key'
+EOF
+}
+
 restart_service() {
     systemctl restart vericount
     if wait_healthy; then
@@ -329,6 +343,7 @@ do_install() {
             || useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
         release=$(install_release "$(fetch_release "$version")")
         activate_release "$release"
+        ensure_secret_key
         migrate
         write_unit
         systemctl enable vericount >/dev/null 2>&1
@@ -424,6 +439,7 @@ EOF
     chown "root:$SERVICE_USER" "$CONF_DIR" "$ENV_FILE"
     chmod 0750 "$CONF_DIR"
     chmod 0640 "$ENV_FILE"
+    ensure_secret_key
 
     migrate
     [ "$db_mode" = local ] && finish_local_database
@@ -440,7 +456,10 @@ EOF
     say "- Publica http://127.0.0.1:$port con HTTPS en $public_url (Caddy, nginx…)."
     [ -n "$admin_email" ] && say "- Entra en $public_url con $admin_email: recibirás un código para crear tu cuenta."
     [ -z "$smtp_url" ] && say "- Sin SMTP, los códigos están en: journalctl -u vericount -e"
-    say "- La configuración de la AEAT y el certificado se ponen en $ENV_FILE (mira el README)."
+    say "- vericount empieza en modo de prueba: las facturas no son reales. El certificado"
+    say "  se sube en Ajustes, y allí se activa el modo real (mira el README)."
+    say "- Guarda una copia de $ENV_FILE con las copias de la base de datos: su"
+    say "  VERICOUNT_SECRET_KEY hace falta para leer el certificado guardado."
     say "- Para actualizar o desinstalar, vuelve a ejecutar este instalador."
 }
 
@@ -461,6 +480,7 @@ do_update() {
     fi
     release=$(install_release "$(fetch_release "$version")")
     activate_release "$release"
+    ensure_secret_key
     migrate
     write_unit
     if restart_service; then

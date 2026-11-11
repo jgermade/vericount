@@ -1,0 +1,18 @@
+<script :setup="{ api, t, shell, webauthn }: Props" lang="ts">
+  // The Settings screen: one section per domain, each loading and saving
+  // its own data.
+  import type { Api } from "../app/api"
+  import type { Shell } from "../app/types"
+  import type { Texts } from "../i18n/es"
+  import type { WebAuthn } from "../access/webauthn"
+
+  interface Props { api: Api; t: Texts; shell: Shell; webauthn: WebAuthn }
+
+  const CompanySettings = await import("../company/CompanySettings.html")
+  const AccessSettings = await import("../access/AccessSettings.html")
+  const AeatSettings = await import("../aeat/AeatSettings.html")
+</script>
+
+<CompanySettings :api :t :shell />
+<AccessSettings :api :t :shell :webauthn />
+<AeatSettings :api :t :shell />

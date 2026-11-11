@@ -1,0 +1,120 @@
+<script :setup="{ api, t, shell }: Props" lang="ts">
+  // Settings of the company: its data, printed on every invoice, and its
+  // numbering series.
+  import type { Api, ApiError } from "../app/api"
+  import type { Shell } from "../app/types"
+  import type { Texts } from "../i18n/es"
+  import type { Company, Series } from "./types"
+
+  interface Props { api: Api; t: Texts; shell: Shell }
+
+  let company: Company = { nif: "", name: "", address: "", postal_code: "", city: "" }
+  let companyExists = false
+  let loaded = false
+  let saved = false
+  let series: Series[] = []
+  let newSeries = { code: "", description: "" }
+  // The NIF is locked in live mode, which the AEAT settings tell.
+  let live = false
+  let busy = false
+
+  const run = async (action: () => Promise<void>) => {
+    busy = true
+    saved = false
+    shell.clear()
+    try {
+      await action()
+    } catch (e) {
+      shell.fail(e)
+    } finally {
+      busy = false
+    }
+  }
+
+  const load = () => run(async () => {
+    try {
+      company = await api.company()
+      companyExists = true
+      live = (await api.aeatQueue()).mode === "live"
+    } catch (e) {
+      // A missing company is the starting state, not an error.
+      if ((e as ApiError).code !== "company_missing") throw e
+    }
+    series = await api.listSeries()
+    loaded = true
+  })
+  const saveCompany = () => run(async () => {
+    company = await api.saveCompany(company)
+    companyExists = true
+    saved = true
+  })
+  const addSeries = () => run(async () => {
+    await api.createSeries(newSeries.code.trim().toUpperCase(), newSeries.description)
+    newSeries = { code: "", description: "" }
+    series = await api.listSeries()
+  })
+  const toggleSeries = (item: Series) => run(async () => {
+    await api.updateSeries(item.code, item.description, !item.active)
+    series = await api.listSeries()
+  })
+
+  await $mounted()
+  load()
+</script>
+
+  <h2>{{ t.settings.companyTitle }}</h2>
+  <p :if="loaded && !companyExists" class="notice">{{ t.settings.companyMissing }}</p>
+  <form @submit.prevent="saveCompany">
+    <label>{{ t.settings.companyName }}
+      <input required autocomplete="organization" :value="company.name" @input="company.name = $event.target.value">
+    </label>
+    <label>{{ t.settings.nif }}
+      <input required maxlength="9" autocapitalize="characters" :value="company.nif"
+        @input="company.nif = $event.target.value">
+    </label>
+    <p :if="live" class="muted">{{ t.settings.nifLocked }}</p>
+    <label>{{ t.settings.address }}
+      <input required autocomplete="street-address" :value="company.address"
+        @input="company.address = $event.target.value">
+    </label>
+    <div class="columns two">
+      <label>{{ t.settings.postalCode }}
+        <input required inputmode="numeric" maxlength="5" :value="company.postal_code"
+          @input="company.postal_code = $event.target.value">
+      </label>
+      <label>{{ t.settings.city }}
+        <input required :value="company.city" @input="company.city = $event.target.value">
+      </label>
+    </div>
+    <button type="submit" class="primary" :disabled="busy">{{ t.save }}</button>
+    <span :if="saved" class="muted" role="status">{{ t.settings.saved }}</span>
+  </form>
+</section>
+
+<section class="card">
+  <h3>{{ t.settings.seriesTitle }}</h3>
+  <p :if="loaded && !series.length" class="muted">{{ t.settings.seriesEmpty }}</p>
+  <ul class="list">
+    <li :each="item in series" :key="item.code" class="row">
+      <span>
+        <strong>{{ item.code }}</strong>
+        <span :if="!item.active" class="tag">{{ t.settings.inactiveTag }}</span>
+        <br>
+        <span class="muted">{{ item.description }} {{ t.contacts.invoices(item.invoices) }}</span>
+      </span>
+      <button :disabled="busy" @click="toggleSeries(item)">
+        {{ item.active ? t.settings.deactivate : t.settings.activate }}
+      </button>
+    </li>
+  </ul>
+  <form @submit.prevent="addSeries">
+    <label>{{ t.settings.seriesCode }}
+      <input required maxlength="20" autocapitalize="characters" :value="newSeries.code"
+        @input="newSeries.code = $event.target.value">
+    </label>
+    <label>{{ t.settings.seriesDescription }}
+      <input :value="newSeries.description" @input="newSeries.description = $event.target.value">
+    </label>
+    <button type="submit" :disabled="busy">{{ t.settings.addSeries }}</button>
+  </form>
+</section>

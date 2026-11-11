@@ -30,23 +30,31 @@ smtp:
   url: ""
   from: ""
 
+# 64 hexadecimal digits (openssl rand -hex 32) that encrypt the AEAT
+# certificate uploaded in the settings. Generated on install and kept on
+# upgrades when empty. Without it, the stored certificate cannot be read:
+# keep a copy with the database backups.
+secretKey: ""
+
 # Instead of the values above, an existing Secret with the keys
-# database-url, migration-database-url and, optionally, smtp-url.
+# database-url, migration-database-url, secret-key and, optionally,
+# smtp-url.
 existingSecret: ""
 
+# vericount starts in practice mode: invoices are not real and records go
+# to a mock inside the server. Live mode is turned on in the settings,
+# after uploading the certificate there.
 aeat:
-  # "test" or "production".
+  # Where live records go: "test" (the AEAT pre-production service) or
+  # "production".
   environment: test
-  # Send records to the AEAT.
-  submit: false
   # Only in the test environment, e.g. a mock.
   endpoint: ""
-  # Secret with the client certificate and key in one PEM file, under the
-  # key identity.pem.
-  identitySecret: ""
   representative:
     name: ""
     nif: ""
+  # Producer of the software, declared in every record. Required for
+  # live mode.
   softwareProducer:
     name: ""
     nif: ""

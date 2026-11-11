@@ -1,0 +1,84 @@
+<script :setup="{ title = '', subtitle = '', padded = true }: CardProps" lang="ts">
+  // A white card on the grey page: one thing. A head when there is a
+  // `title` or something in the `actions` slot, the content, and a foot
+  // when the `foot` slot has something.
+  //
+  //   <Card :title="t.settings.seriesTitle">
+  //     <template :slot.actions><Button size="sm" variant="ghost">…</Button></template>
+  //     …
+  //     <template :slot.foot>…</template>
+  //   </Card>
+  //
+  // `padded="false"` for a list of entries, which pad themselves. Part of
+  // the theme: imports nothing, draws only with tokens.
+  interface CardProps {
+    title?: string
+    subtitle?: string
+    padded?: boolean | ""
+  }
+  const flag = (value: unknown) => value === "" || value === true || value === "true"
+</script>
+
+<section class="card">
+  <header :if="title || $slots.actions" class="head">
+    <div class="titles">
+      <h3 :if="title" class="title">{{ title }}</h3>
+      <p :if="subtitle" class="subtitle">{{ subtitle }}</p>
+    </div>
+    <div :if="$slots.actions" class="actions"><slot.actions /></div>
+  </header>
+  <div class="body" :class.padded="flag(padded)"><slot></slot></div>
+  <footer :if="$slots.foot" class="foot"><slot.foot /></footer>
+</section>
+
+<style scoped>
+  .card {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: var(--vc-radius-lg);
+    background: var(--vc-surface);
+    color: var(--vc-fg);
+    box-shadow: var(--vc-shadow-sm);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    line-height: var(--vc-leading);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--vc-space-3);
+    padding: var(--vc-space-5) var(--vc-space-5) 0;
+  }
+  .titles { min-width: 0; }
+  .title {
+    margin: 0;
+    font-family: var(--vc-font-display);
+    font-size: var(--vc-text-lg);
+    font-weight: var(--vc-weight-bold);
+    letter-spacing: var(--vc-tracking-display);
+    line-height: var(--vc-leading-tight);
+  }
+  .subtitle {
+    margin: 2px 0 0;
+    color: var(--vc-fg-muted);
+    font-size: var(--vc-text-sm);
+  }
+  .actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--vc-space-2);
+  }
+  .body { min-width: 0; }
+  .body.padded { padding: var(--vc-space-4) var(--vc-space-5) var(--vc-space-5); }
+  .head + .body:not(.padded) { padding-top: var(--vc-space-2); }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--vc-space-2);
+    padding: 0 var(--vc-space-5) var(--vc-space-5);
+  }
+</style>

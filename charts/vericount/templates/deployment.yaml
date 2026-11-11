@@ -89,18 +89,16 @@ spec:
             {{- end }}
             - name: VERICOUNT_AEAT_ENV
               value: {{ .Values.aeat.environment | quote }}
-            {{- if .Values.aeat.submit }}
-            - name: VERICOUNT_AEAT_SUBMIT
-              value: "1"
-            {{- end }}
             {{- with .Values.aeat.endpoint }}
             - name: VERICOUNT_AEAT_ENDPOINT
               value: {{ . | quote }}
             {{- end }}
-            {{- if .Values.aeat.identitySecret }}
-            - name: VERICOUNT_AEAT_IDENTITY_PEM
-              value: /etc/vericount/aeat/identity.pem
-            {{- end }}
+            # Encrypts the AEAT certificate uploaded in the settings.
+            - name: VERICOUNT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vericount.secretName" . }}
+                  key: secret-key
             {{- with .Values.aeat.representative }}
             {{- if .name }}
             - name: VERICOUNT_AEAT_REPRESENTATIVE_NAME
@@ -139,19 +137,6 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          {{- if .Values.aeat.identitySecret }}
-          volumeMounts:
-            - name: aeat-identity
-              mountPath: /etc/vericount/aeat
-              readOnly: true
-          {{- end }}
-      {{- if .Values.aeat.identitySecret }}
-      volumes:
-        - name: aeat-identity
-          secret:
-            secretName: {{ .Values.aeat.identitySecret }}
-            defaultMode: 0400
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

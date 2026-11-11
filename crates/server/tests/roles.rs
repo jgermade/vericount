@@ -7,7 +7,10 @@ use vericount_server::grant_app_role;
 #[sqlx::test]
 async fn the_app_role_is_granted_once(pool: PgPool) {
     // Roles belong to the whole cluster, not to the test database.
-    let role = format!("vc_test_{}", &vericount_server::auth::new_token()[..12]);
+    let role = format!(
+        "vc_test_{}",
+        &vericount_server::access::sessions::new_token()[..12]
+    );
     sqlx::query(&format!("CREATE ROLE {role} LOGIN"))
         .execute(&pool)
         .await

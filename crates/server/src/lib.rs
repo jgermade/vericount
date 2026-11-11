@@ -1,16 +1,20 @@
 //! HTTP server for vericount: serves the web client and the API.
 
-pub mod aeat_client;
+// Domains: each folder holds its data access, its rules and, in api.rs,
+// its HTTP routes.
+pub mod access;
+pub mod aeat;
+pub mod company;
+pub mod contacts;
+pub mod invoices;
+
+// Shared by every domain.
 pub mod api;
-pub mod auth;
-pub mod certificate;
 pub mod config;
-pub mod directory;
+pub mod error;
+pub mod events;
 pub mod mail;
-pub mod passkeys;
 pub mod security;
-pub mod store;
-pub mod submission;
 
 use std::{path::Path, sync::Arc};
 
@@ -32,8 +36,8 @@ pub struct AppState {
     pub mailer: Arc<mail::Mailer>,
     /// Passkey settings, derived from `config.public_url`.
     pub webauthn: Arc<Webauthn>,
-    /// Present when sending records to the AEAT is enabled.
-    pub submitter: Option<Arc<submission::Submitter>>,
+    /// Mode, certificate and submitter of the AEAT records.
+    pub aeat: Arc<aeat::service::AeatService>,
 }
 
 /// Builds the application router.

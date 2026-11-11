@@ -1,0 +1,124 @@
+<script :setup="{
+  variant = 'secondary',
+  size = 'md',
+  type = 'button',
+  disabled = false,
+  loading = false,
+  block = false,
+  label = ''
+}: ButtonProps" lang="ts">
+  // A button. `variant` is what it does: `primary` is the one thing a view
+  // asks for, `secondary` the rest, `ghost` an action that should not
+  // compete with the content, `danger` one that cannot be undone (cancel an
+  // invoice, go live).
+  //
+  //   <Button variant="primary" @click="issue()">{{ t.form.issue }}</Button>
+  //   <Button :loading="saving" block>{{ t.save }}</Button>
+  //
+  // `click` is re-emitted with the native event in `$event.detail`, and not
+  // while disabled or loading. `label` names a button whose content is only
+  // an icon. Part of the theme: imports nothing, draws only with tokens.
+  interface ButtonProps {
+    variant?: "primary" | "secondary" | "ghost" | "danger"
+    size?: "sm" | "md" | "lg"
+    type?: "button" | "submit" | "reset"
+    disabled?: boolean | ""
+    loading?: boolean | ""
+    block?: boolean | ""
+    label?: string
+  }
+
+  // A bare attribute (`<Button disabled>`) arrives as "", and means on.
+  const flag = (value: unknown) => value === "" || value === true || value === "true"
+  $: isDisabled = flag(disabled)
+  $: isLoading = flag(loading)
+
+  const click = (event: Event) => {
+    if (isDisabled || isLoading) return
+    $emit("click", event)
+  }
+</script>
+
+<button class="button"
+        :type="type"
+        :class.primary="variant === 'primary'"
+        :class.ghost="variant === 'ghost'"
+        :class.danger="variant === 'danger'"
+        :class.sm="size === 'sm'"
+        :class.lg="size === 'lg'"
+        :class.block="flag(block)"
+        :class.loading="isLoading"
+        :disabled="isDisabled"
+        :aria-busy="isLoading ? 'true' : null"
+        :aria-label="label || null"
+        @click="click($event)">
+  <span :if="isLoading" class="spin" aria-hidden="true"></span>
+  <span class="content"><slot></slot></span>
+</button>
+
+<style scoped>
+  .button {
+    --h: var(--vc-control-md);
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--vc-space-2);
+    min-height: var(--h);
+    min-width: var(--h);
+    padding: 0 var(--vc-space-5);
+    border: 0;
+    border-radius: var(--vc-radius-full);
+    background: var(--vc-accent-soft);
+    color: var(--vc-accent);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    font-weight: var(--vc-weight-bold);
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background var(--vc-duration-fast) ease,
+                color var(--vc-duration-fast) ease,
+                transform var(--vc-duration-fast) ease;
+  }
+  .button:hover:not(:disabled) { background: var(--vc-selected); }
+  /* Pressed: the pill gives a little. */
+  .button:active:not(:disabled) { transform: scale(.97); }
+  .button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .button:disabled { cursor: default; opacity: .4; }
+
+  .primary { background: var(--vc-accent); color: var(--vc-on-accent); }
+  .primary:hover:not(:disabled) { background: var(--vc-accent-hover); }
+  .primary:active:not(:disabled) { background: var(--vc-accent-active); }
+
+  .ghost { background: transparent; color: var(--vc-accent); }
+  .ghost:hover:not(:disabled) { background: var(--vc-hover); }
+
+  /* What cannot be undone: a soft red until it is pressed. */
+  .danger { background: var(--vc-bad-soft); color: var(--vc-bad); }
+  .danger:hover:not(:disabled) { background: var(--vc-bad); color: var(--vc-on-accent); }
+  .danger:active:not(:disabled) { background: var(--vc-bad-active); color: var(--vc-on-accent); }
+
+  .sm {
+    --h: var(--vc-control-sm);
+    padding: 0 var(--vc-space-4);
+    font-size: var(--vc-text-sm);
+  }
+  .lg {
+    --h: var(--vc-control-lg);
+    padding: 0 var(--vc-space-6);
+    font-size: var(--vc-text-lg);
+  }
+  .block { display: flex; width: 100%; }
+
+  .loading .content { visibility: hidden; }
+  .spin {
+    position: absolute;
+    width: 1.1em;
+    height: 1.1em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin calc(var(--vc-duration-slow) * 2.5) linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(1turn); } }
+</style>
