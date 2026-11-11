@@ -1,8 +1,11 @@
 <script :setup="{ api, t, shell, webauthn }: Props" lang="ts">
-  import type { Api, ApiError } from "./api"
-  import type { Texts } from "./i18n/es"
-  import type { AeatQueue, Company, PasskeyInfo, Series, Shell, UserInfo } from "./types"
-  import type { WebAuthn } from "./webauthn"
+  import type { Api, ApiError } from "../app/api"
+  import type { Texts } from "../i18n/es"
+  import type { PasskeyInfo, UserInfo } from "../access/types"
+  import type { AeatQueue } from "../aeat/types"
+  import type { Shell } from "../app/types"
+  import type { Company, Series } from "../company/types"
+  import type { WebAuthn } from "../access/webauthn"
 
   interface Props { api: Api; t: Texts; shell: Shell; webauthn: WebAuthn }
 

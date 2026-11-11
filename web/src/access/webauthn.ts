@@ -2,7 +2,7 @@
 // with binary fields in base64url; this module turns them into what
 // `navigator.credentials` expects, and its answers back into JSON.
 
-import type { Api } from "./api"
+import type { Api } from "../app/api"
 import type { PasskeyInfo, Session } from "./types"
 
 /// An error the interface can describe, like the API's.

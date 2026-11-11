@@ -1,5 +1,5 @@
 import type { ApiError } from "./api"
-import type { Texts } from "./i18n/es"
+import type { Texts } from "../i18n/es"
 
 /// Turns an API error into a message in the user's language.
 export function describeError(t: Texts, error: unknown): string {

@@ -1,7 +1,7 @@
 // User interface texts. The interface is in Spanish; identifiers and
 // comments stay in English.
 
-import type { AeatState, LiveBlocker } from "../types"
+import type { AeatState, LiveBlocker } from "../aeat/types"
 
 export const es = {
   appName: "vericount",

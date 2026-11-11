@@ -1,7 +1,9 @@
 <script :setup="{ api, t, shell }: Props" lang="ts">
-  import type { Api } from "./api"
-  import type { Texts } from "./i18n/es"
-  import type { AeatQueue, Amount, ChainReport, PeriodSummary, Shell } from "./types"
+  import type { Api } from "../app/api"
+  import type { Texts } from "../i18n/es"
+  import type { AeatQueue } from "../aeat/types"
+  import type { Shell } from "../app/types"
+  import type { Amount, ChainReport, PeriodSummary } from "../invoices/types"
 
   interface Props { api: Api; t: Texts; shell: Shell }
 

@@ -1,8 +1,9 @@
 <script :setup="{ api, t, describeError, webauthn }: Props" lang="ts">
   import type { Api, ApiError } from "./api"
-  import type { Texts } from "./i18n/es"
-  import type { Session, Shell } from "./types"
-  import type { WebAuthn } from "./webauthn"
+  import type { Texts } from "../i18n/es"
+  import type { Session } from "../access/types"
+  import type { Shell } from "./types"
+  import type { WebAuthn } from "../access/webauthn"
 
   interface Props {
     api: Api
@@ -13,11 +14,11 @@
 
   type View = "loading" | "sign-in" | "home" | "invoices" | "contacts" | "settings"
 
-  const SignIn = await import("./SignIn.html")
-  const Home = await import("./Home.html")
-  const Invoices = await import("./Invoices.html")
-  const Contacts = await import("./Contacts.html")
-  const Settings = await import("./Settings.html")
+  const SignIn = await import("../access/SignIn.html")
+  const Home = await import("../home/Home.html")
+  const Invoices = await import("../invoices/Invoices.html")
+  const Contacts = await import("../contacts/Contacts.html")
+  const Settings = await import("../settings/Settings.html")
 
   let view: View = "loading"
   let email = ""
