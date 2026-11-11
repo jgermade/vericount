@@ -18,7 +18,7 @@ use vericounts_core::hash::{self, CancellationFields, RegistrationFields};
 fn invoice_body() -> Value {
     json!({
         "series": "A2026",
-        "recipient": { "name": "Customer SA", "nif": "a58818501" },
+        "contact_id": common::CUSTOMER_ID,
         "description": "Consulting services",
         "lines": [
             { "description": "Consulting", "quantity": "10", "unit_price": "50.00", "vat_rate": "21" },
@@ -43,6 +43,10 @@ async fn creates_invoices_with_chained_records(pool: PgPool) {
     assert_eq!(first["series_number"], "A2026-0001");
     assert_eq!(first["issuer_nif"], ISSUER_NIF);
     assert_eq!(first["recipient_nif"], "A58818501");
+    assert_eq!(first["recipient_name"], "Customer & Sons SA");
+    assert_eq!(first["recipient_address"], "Calle Mayor 1, 28013 Madrid");
+    assert_eq!(first["issuer_address"], "Calle Real 5, 15001 A Coruña");
+    assert_eq!(first["contact_id"], common::CUSTOMER_ID);
     assert_eq!(first["issue_date"], today().to_string());
     assert_eq!(first["total_base"], "524.99");
     assert_eq!(first["total_tax"], "106.00");
@@ -119,10 +123,10 @@ async fn preview_computes_totals_without_storing(pool: PgPool) {
     assert_eq!(preview["taxes"][0]["base_amount"], "500.00");
 
     let mut invalid = invoice_body();
-    invalid["recipient"]["nif"] = json!("");
+    invalid["lines"][0]["quantity"] = json!("-1");
     let response = post(&app, "/api/invoices/preview", invalid).await;
     assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(response.json()["error"]["field"], "recipient.nif");
+    assert_eq!(response.json()["error"]["field"], "lines[0].quantity");
 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM invoices")
         .fetch_one(&pool)
@@ -179,14 +183,8 @@ async fn invalid_invoices_are_rejected(pool: PgPool) {
     type Change = Box<dyn Fn(&mut Value)>;
     let cases: Vec<(&str, Change)> = vec![
         ("series", Box::new(|b| b["series"] = json!("a-1"))),
-        (
-            "recipient.name",
-            Box::new(|b| b["recipient"]["name"] = json!(" ")),
-        ),
-        (
-            "recipient.nif",
-            Box::new(|b| b["recipient"]["nif"] = json!("A 1")),
-        ),
+        ("series", Box::new(|b| b["series"] = json!("Z9"))),
+        ("contact_id", Box::new(|b| b["contact_id"] = json!(999))),
         ("description", Box::new(|b| b["description"] = json!(""))),
         ("lines", Box::new(|b| b["lines"] = json!([]))),
         (

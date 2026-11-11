@@ -28,6 +28,10 @@ pub enum StoreError {
     Validation(ValidationError),
     NotFound,
     AlreadyCancelled,
+    /// The company data has not been entered yet.
+    CompanyMissing,
+    /// The request conflicts with existing data: (code, message).
+    Conflict(&'static str, &'static str),
     Database(sqlx::Error),
 }
 
@@ -49,8 +53,8 @@ pub struct NewInvoice {
     pub series: String,
     /// Defaults to the current date in Spain.
     pub issue_date: Option<NaiveDate>,
-    pub recipient_name: String,
-    pub recipient_nif: String,
+    /// The customer; its data is copied into the invoice.
+    pub contact_id: i64,
     pub description: String,
     pub totals: Totals,
 }
@@ -81,6 +85,9 @@ pub struct Invoice {
     pub invoice_type: String,
     pub recipient_name: String,
     pub recipient_nif: String,
+    pub issuer_address: String,
+    pub recipient_address: String,
+    pub contact_id: Option<i64>,
     pub description: String,
     #[serde(with = "rust_decimal::serde::str")]
     pub total_base: Decimal,
@@ -162,6 +169,30 @@ pub async fn create_invoice(
     let mut tx = pool.begin().await?;
     lock_chain(&mut tx, &issuer.nif).await?;
 
+    let series_active: Option<bool> =
+        sqlx::query_scalar("SELECT active FROM series WHERE code = $1")
+            .bind(&new.series)
+            .fetch_optional(&mut *tx)
+            .await?;
+    match series_active {
+        Some(true) => {}
+        Some(false) => {
+            return Err(ValidationError::new("series", "the series is not active").into())
+        }
+        None => return Err(ValidationError::new("series", "the series does not exist").into()),
+    }
+    let contact: Option<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT name, nif, address, postal_code, city FROM contacts
+         WHERE id = $1 AND is_customer AND NOT archived",
+    )
+    .bind(new.contact_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((recipient_name, recipient_nif, address, postal_code, city)) = contact else {
+        return Err(ValidationError::new("contact_id", "is not an active customer").into());
+    };
+    let recipient_address = crate::directory::full_address(&address, &postal_code, &city);
+
     let (last_number, last_date): (Option<i32>, Option<NaiveDate>) = sqlx::query_as(
         "SELECT max(number), max(issue_date) FROM invoices WHERE issuer_nif = $1 AND series = $2",
     )
@@ -183,8 +214,8 @@ pub async fn create_invoice(
     let invoice_id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (issuer_nif, issuer_name, series, number, series_number, issue_date,
              invoice_type, recipient_name, recipient_nif, description,
-             total_base, total_tax, total_amount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             total_base, total_tax, total_amount, issuer_address, recipient_address, contact_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING id",
     )
     .bind(&issuer.nif)
@@ -194,12 +225,15 @@ pub async fn create_invoice(
     .bind(&series_number)
     .bind(issue_date)
     .bind(INVOICE_TYPE)
-    .bind(&new.recipient_name)
-    .bind(&new.recipient_nif)
+    .bind(&recipient_name)
+    .bind(&recipient_nif)
     .bind(&new.description)
     .bind(totals.total_base)
     .bind(totals.total_tax)
     .bind(totals.total_amount)
+    .bind(&issuer.address)
+    .bind(&recipient_address)
+    .bind(new.contact_id)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -359,7 +393,8 @@ pub async fn get_invoice(
 ) -> Result<InvoiceDetail, StoreError> {
     let invoice: Invoice = sqlx::query_as(
         "SELECT id, issuer_nif, issuer_name, series, number, series_number, issue_date,
-                invoice_type, recipient_name, recipient_nif, description,
+                invoice_type, recipient_name, recipient_nif, issuer_address,
+                recipient_address, contact_id, description,
                 total_base, total_tax, total_amount
          FROM invoices WHERE id = $1 AND issuer_nif = $2",
     )

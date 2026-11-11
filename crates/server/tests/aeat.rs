@@ -23,7 +23,7 @@ use vericounts_server::{
 fn invoice_body() -> Value {
     json!({
         "series": "A2026",
-        "recipient": { "name": "Customer & Sons SA", "nif": "A58818501" },
+        "contact_id": common::CUSTOMER_ID,
         "description": "Consulting <services>",
         "lines": [
             { "description": "Consulting", "quantity": "10", "unit_price": "50.00", "vat_rate": "21" },
@@ -361,6 +361,7 @@ mod worker {
     #[sqlx::test]
     async fn submissions_can_be_requested_from_the_api_when_enabled(pool: PgPool) {
         common::sign_in(&pool).await;
+        common::seed(&pool).await;
         let disabled = common::app_signed_out(pool.clone());
         let response = post(&disabled, "/api/aeat/submissions", json!({})).await;
         assert_eq!(response.status, StatusCode::CONFLICT);

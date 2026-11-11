@@ -45,6 +45,7 @@ const CSRF: (&str, &str) = ("x-csrf-protection", "1");
 
 #[sqlx::test]
 async fn sign_in_use_and_sign_out(pool: PgPool) {
+    common::seed(&pool).await;
     auth::create_user(&pool, USERNAME, PASSWORD).await.unwrap();
     let app = common::app_signed_out(pool.clone());
 
@@ -173,6 +174,7 @@ async fn state_changing_requests_need_the_csrf_header_and_origin(pool: PgPool) {
 
 #[sqlx::test]
 async fn expired_revoked_and_disabled_sessions_are_refused(pool: PgPool) {
+    common::seed(&pool).await;
     let user_id = auth::create_user(&pool, USERNAME, PASSWORD).await.unwrap();
     let app = common::app_signed_out(pool.clone());
     let token = auth::create_session(&pool, user_id, "test").await.unwrap();

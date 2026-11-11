@@ -4,6 +4,7 @@ pub mod aeat_client;
 pub mod api;
 pub mod auth;
 pub mod config;
+pub mod directory;
 pub mod security;
 pub mod store;
 pub mod submission;

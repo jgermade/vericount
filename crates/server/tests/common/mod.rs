@@ -40,7 +40,34 @@ pub fn issuer() -> Issuer {
     Issuer {
         nif: ISSUER_NIF.to_owned(),
         name: "Example SL".to_owned(),
+        address: "Calle Real 5, 15001 A Coruña".to_owned(),
     }
+}
+
+/// Id of the customer that `seed` creates.
+pub const CUSTOMER_ID: i64 = 1;
+
+/// Company, two series and one customer, as most tests need.
+pub async fn seed(pool: &PgPool) {
+    sqlx::query(
+        "INSERT INTO company (nif, name, address, postal_code, city)
+         VALUES ($1, 'Example SL', 'Calle Real 5', '15001', 'A Coruña')",
+    )
+    .bind(ISSUER_NIF)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO series (code) VALUES ('A2026'), ('R2026')")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO contacts (name, nif, address, postal_code, city)
+         VALUES ('Customer & Sons SA', 'A58818501', 'Calle Mayor 1', '28013', 'Madrid')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
 }
 
 pub const USERNAME: &str = "tester";
@@ -53,7 +80,6 @@ pub fn state(pool: PgPool) -> AppState {
     AppState {
         pool,
         config: Arc::new(Config {
-            issuer: issuer(),
             aeat_environment: AeatEnvironment::Test,
         }),
         throttle: Arc::default(),
@@ -86,9 +112,10 @@ pub async fn sign_in(pool: &PgPool) {
     .unwrap();
 }
 
-/// The application with a signed-in test user.
+/// The application with a signed-in test user and the seed data.
 pub async fn app(pool: PgPool) -> Router {
     sign_in(&pool).await;
+    seed(&pool).await;
     app_signed_out(pool)
 }
 

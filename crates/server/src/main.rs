@@ -7,6 +7,8 @@ use vericounts_server::{
     aeat_client::AeatClient,
     auth,
     config::{self, Config, Startup},
+    directory,
+    store::StoreError,
     submission::{self, RunOutcome, Submitter},
     AppState, MIGRATOR,
 };
@@ -91,7 +93,11 @@ fn submitter(config: &Config) -> Result<Option<Arc<Submitter>>, AnyError> {
 async fn submission_loop(state: AppState, submitter: Arc<Submitter>) {
     const MIN_WAIT: u64 = 60;
     loop {
-        let wait = match submission::run_once(&state.pool, &state.config.issuer, &submitter).await {
+        let outcome = match directory::issuer(&state.pool).await {
+            Ok(issuer) => submission::run_once(&state.pool, &issuer, &submitter).await,
+            Err(error) => Err(error),
+        };
+        let wait = match outcome {
             Ok(RunOutcome::Sent {
                 outcome,
                 records,
@@ -102,6 +108,8 @@ async fn submission_loop(state: AppState, submitter: Arc<Submitter>) {
                 u64::from(wait_seconds.unwrap_or(0)).max(MIN_WAIT)
             }
             Ok(_) => MIN_WAIT,
+            // Nothing to send until the company data is entered.
+            Err(StoreError::CompanyMissing) => MIN_WAIT,
             Err(error) => {
                 eprintln!("submission failed: {error:?}");
                 MIN_WAIT

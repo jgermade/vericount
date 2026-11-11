@@ -8,7 +8,7 @@ use axum::{
     },
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
     Extension, Json, Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -22,6 +22,7 @@ use vericounts_core::{
 
 use crate::{
     auth::{self, CurrentUser, LoginError},
+    directory::{self, Company, Contact, ContactInput, NewSeries, Series, SeriesUpdate},
     store::{self, ChainReport, InvoiceDetail, InvoiceSummary, NewInvoice, StoreError},
     submission::{self, QueueStatus, RunOutcome},
     AppState,
@@ -34,6 +35,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/invoices/{id}", get(get_invoice))
         .route("/invoices/{id}/cancellation", post(cancel_invoice))
         .route("/chain/verification", get(verify_chain))
+        .route("/company", get(get_company).put(put_company))
+        .route("/series", get(list_series).post(create_series))
+        .route("/series/{code}", put(update_series))
+        .route("/contacts", get(list_contacts).post(create_contact))
+        .route("/contacts/{id}", get(get_contact).put(update_contact))
         .route("/aeat", get(aeat_status))
         .route("/aeat/submissions", post(submit_now))
         .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "not_found", "not found") })
@@ -106,9 +112,13 @@ impl From<StoreError> for ApiError {
                 message: error.message,
                 field: Some(error.field),
             },
-            StoreError::NotFound => {
-                Self::new(StatusCode::NOT_FOUND, "not_found", "invoice not found")
-            }
+            StoreError::NotFound => Self::new(StatusCode::NOT_FOUND, "not_found", "not found"),
+            StoreError::CompanyMissing => Self::new(
+                StatusCode::CONFLICT,
+                "company_missing",
+                "enter the company data first",
+            ),
+            StoreError::Conflict(code, message) => Self::new(StatusCode::CONFLICT, code, message),
             StoreError::AlreadyCancelled => Self::new(
                 StatusCode::CONFLICT,
                 "already_cancelled",
@@ -140,17 +150,10 @@ impl From<JsonRejection> for ApiError {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Recipient {
-    name: String,
-    nif: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct CreateInvoice {
     series: String,
     issue_date: Option<NaiveDate>,
-    recipient: Recipient,
+    contact_id: i64,
     description: String,
     lines: Vec<LineInput>,
 }
@@ -164,7 +167,8 @@ struct InvoiceResponse {
 }
 
 async fn invoice_response(state: &AppState, id: i64) -> Result<InvoiceResponse, ApiError> {
-    let detail = store::get_invoice(&state.pool, &state.config.issuer.nif, id).await?;
+    let detail =
+        store::get_invoice(&state.pool, &directory::issuer(&state.pool).await?.nif, id).await?;
     let qr_url = qr::qr_url(
         state.config.aeat_environment,
         &detail.invoice.issuer_nif,
@@ -180,8 +184,7 @@ impl CreateInvoice {
         Ok(NewInvoice {
             series: invoice::validate_series(&self.series)?,
             issue_date: self.issue_date,
-            recipient_name: invoice::validate_text("recipient.name", &self.recipient.name)?,
-            recipient_nif: invoice::validate_tax_id("recipient.nif", &self.recipient.nif)?,
+            contact_id: self.contact_id,
             description: invoice::validate_text("description", &self.description)?,
             totals: invoice::compute_totals(&self.lines)?,
         })
@@ -223,7 +226,13 @@ async fn create_invoice(
 ) -> Result<(StatusCode, Json<InvoiceResponse>), ApiError> {
     let Json(body) = body?;
     let new = body.validate()?;
-    let id = store::create_invoice(&state.pool, &state.config.issuer, &new, now()).await?;
+    let id = store::create_invoice(
+        &state.pool,
+        &directory::issuer(&state.pool).await?,
+        &new,
+        now(),
+    )
+    .await?;
     auth::log_event(
         &state.pool,
         Some(user.id),
@@ -241,7 +250,7 @@ async fn list_invoices(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<InvoiceSummary>>, ApiError> {
     Ok(Json(
-        store::list_invoices(&state.pool, &state.config.issuer.nif).await?,
+        store::list_invoices(&state.pool, &directory::issuer(&state.pool).await?.nif).await?,
     ))
 }
 
@@ -257,7 +266,13 @@ async fn cancel_invoice(
     Extension(user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, ApiError> {
-    store::cancel_invoice(&state.pool, &state.config.issuer, id, now()).await?;
+    store::cancel_invoice(
+        &state.pool,
+        &directory::issuer(&state.pool).await?,
+        id,
+        now(),
+    )
+    .await?;
     auth::log_event(
         &state.pool,
         Some(user.id),
@@ -270,7 +285,7 @@ async fn cancel_invoice(
 
 async fn verify_chain(State(state): State<AppState>) -> Result<Json<ChainReport>, ApiError> {
     Ok(Json(
-        store::verify_chain(&state.pool, &state.config.issuer.nif).await?,
+        store::verify_chain(&state.pool, &directory::issuer(&state.pool).await?.nif).await?,
     ))
 }
 
@@ -364,7 +379,7 @@ async fn aeat_status(State(state): State<AppState>) -> Result<Json<QueueStatus>,
     Ok(Json(
         submission::queue_status(
             &state.pool,
-            &state.config.issuer.nif,
+            &directory::issuer(&state.pool).await?.nif,
             state.submitter.is_some(),
         )
         .await?,
@@ -383,7 +398,12 @@ async fn submit_now(
             "sending records to the AEAT is not enabled",
         ));
     };
-    let outcome = submission::run_once(&state.pool, &state.config.issuer, submitter).await?;
+    let outcome = submission::run_once(
+        &state.pool,
+        &directory::issuer(&state.pool).await?,
+        submitter,
+    )
+    .await?;
     auth::log_event(
         &state.pool,
         Some(user.id),
@@ -392,4 +412,90 @@ async fn submit_now(
     )
     .await;
     Ok(Json(outcome))
+}
+
+async fn get_company(State(state): State<AppState>) -> Result<Json<Company>, ApiError> {
+    directory::company(&state.pool)
+        .await?
+        .map(Json)
+        .ok_or_else(|| ApiError::from(StoreError::CompanyMissing))
+}
+
+async fn put_company(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    body: Result<Json<Company>, JsonRejection>,
+) -> Result<Json<Company>, ApiError> {
+    let Json(body) = body?;
+    let company = directory::save_company(&state.pool, body).await?;
+    auth::log_event(&state.pool, Some(user.id), "company.saved", &company.nif).await;
+    Ok(Json(company))
+}
+
+async fn list_series(State(state): State<AppState>) -> Result<Json<Vec<Series>>, ApiError> {
+    Ok(Json(directory::list_series(&state.pool).await?))
+}
+
+async fn create_series(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    body: Result<Json<NewSeries>, JsonRejection>,
+) -> Result<(StatusCode, Json<Series>), ApiError> {
+    let Json(body) = body?;
+    let series = directory::create_series(&state.pool, body).await?;
+    auth::log_event(&state.pool, Some(user.id), "series.created", &series.code).await;
+    Ok((StatusCode::CREATED, Json(series)))
+}
+
+async fn update_series(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    Path(code): Path<String>,
+    body: Result<Json<SeriesUpdate>, JsonRejection>,
+) -> Result<Json<Series>, ApiError> {
+    let Json(body) = body?;
+    let series = directory::update_series(&state.pool, &code, body).await?;
+    auth::log_event(&state.pool, Some(user.id), "series.updated", &series.code).await;
+    Ok(Json(series))
+}
+
+async fn list_contacts(State(state): State<AppState>) -> Result<Json<Vec<Contact>>, ApiError> {
+    Ok(Json(directory::list_contacts(&state.pool).await?))
+}
+
+async fn get_contact(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<Contact>, ApiError> {
+    Ok(Json(directory::get_contact(&state.pool, id).await?))
+}
+
+async fn create_contact(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    body: Result<Json<ContactInput>, JsonRejection>,
+) -> Result<(StatusCode, Json<Contact>), ApiError> {
+    let Json(body) = body?;
+    let contact = directory::create_contact(&state.pool, body).await?;
+    let id = contact.id.to_string();
+    auth::log_event(&state.pool, Some(user.id), "contact.created", &id).await;
+    Ok((StatusCode::CREATED, Json(contact)))
+}
+
+async fn update_contact(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    body: Result<Json<ContactInput>, JsonRejection>,
+) -> Result<Json<Contact>, ApiError> {
+    let Json(body) = body?;
+    let contact = directory::update_contact(&state.pool, id, body).await?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "contact.updated",
+        &id.to_string(),
+    )
+    .await;
+    Ok(Json(contact))
 }

@@ -4,16 +4,17 @@ use std::{env, net::SocketAddr};
 
 use vericounts_core::{invoice, qr::AeatEnvironment};
 
-/// The company that issues the invoices.
+/// The company that issues the invoices, as stored in the `company` table.
 #[derive(Debug, Clone)]
 pub struct Issuer {
     pub nif: String,
     pub name: String,
+    /// One-line address, printed on invoices.
+    pub address: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub issuer: Issuer,
     pub aeat_environment: AeatEnvironment,
 }
 
@@ -31,14 +32,6 @@ fn required(name: &str) -> Result<String, String> {
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let nif =
-            invoice::validate_tax_id("VERICOUNTS_ISSUER_NIF", &required("VERICOUNTS_ISSUER_NIF")?)
-                .map_err(|e| e.to_string())?;
-        let name = invoice::validate_text(
-            "VERICOUNTS_ISSUER_NAME",
-            &required("VERICOUNTS_ISSUER_NAME")?,
-        )
-        .map_err(|e| e.to_string())?;
         let aeat_environment = match env::var("VERICOUNTS_AEAT_ENV").as_deref() {
             Err(_) | Ok("test") => AeatEnvironment::Test,
             Ok("production") => AeatEnvironment::Production,
@@ -48,10 +41,7 @@ impl Config {
                 ))
             }
         };
-        Ok(Self {
-            issuer: Issuer { nif, name },
-            aeat_environment,
-        })
+        Ok(Self { aeat_environment })
     }
 }
 
