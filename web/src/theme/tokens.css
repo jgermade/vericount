@@ -1,0 +1,237 @@
+/* vericount's design tokens: every value the theme's components draw with,
+   and the only place each one is written. A component reads them with no
+   fallback, so a missing token looks missing instead of quietly drawing a
+   value of its own. See RECORD/2026-11-11.design-system.WIP.md.
+
+   The look is a ledger, "libro mayor": warm paper, ink in the blue of the
+   logo, hairline rules like a bookkeeping page, figures that line up, and
+   rubber stamps for what an invoice is (cancelled, practice, verified).
+
+   `:root` is light; `[data-theme="dark"]` on the root, or the system's dark
+   preference when the root says nothing, re-points the colours: the same
+   ledger at night. Any element can be an island of the other tone with
+   `data-tone="dark"` or `data-tone="light"`. Shape, type and motion are the
+   same in both. */
+
+:root, [data-tone="light"] {
+  /* ---- colour, by role ---------------------------------------------------- */
+
+  /* Grounds, from the bottom up: the page (the desk), a well cut into it,
+     and the sheet that sits on it (a card, a field, a menu). */
+  --vc-paper: #f5f2ea;
+  --vc-sunken: #ebe6d9;
+  --vc-surface: #fffdf8;
+  /* What is typed or chosen in, and the same control switched off. */
+  --vc-field: #ffffff;
+  --vc-field-off: #efebe1;
+  /* Under the pointer, pressed, and chosen: tints, never the accent itself,
+     which is a control that is on. */
+  --vc-hover: #f2eee4;
+  --vc-active: #e8e2d4;
+  --vc-selected: #e4ecf8;
+
+  /* The ledger's lines: the hairline between entries, the border of what
+     can be touched, and the red double rule of the margin. */
+  --vc-rule: #e6e0d1;
+  --vc-border: #d2c9b5;
+  --vc-border-strong: #a99f89;
+  --vc-margin: #d79a92;
+
+  /* Ink. Muted is for labels and what explains; subtle for placeholders and
+     what is switched off, still readable. */
+  --vc-ink: #1c2431;
+  --vc-ink-muted: #5a6271;
+  --vc-ink-subtle: #8a909b;
+
+  /* The tones. Each has a `-soft` ground for a badge or an alert, on which
+     the strong colour is the ink. The accent is the logo's blue. */
+  --vc-accent: #1b5fc1;
+  --vc-accent-hover: #164fa2;
+  --vc-accent-active: #113f83;
+  --vc-on-accent: #ffffff;
+  --vc-accent-soft: #e4ecf8;
+  --vc-ok: #1d6f45;
+  --vc-ok-soft: #e2f1e7;
+  --vc-warn: #8a5600;
+  --vc-warn-soft: #faefd6;
+  --vc-bad: #b2261d;
+  --vc-bad-hover: #941e17;
+  --vc-bad-active: #791812;
+  --vc-bad-soft: #f8e2de;
+
+  /* Focus: the ring a focused field draws, and the outline anything else
+     draws when reached from the keyboard. */
+  --vc-focus: #1b5fc1;
+  --vc-focus-ring: rgba(27, 95, 193, .22);
+  --vc-overlay: rgba(28, 36, 49, .45);
+
+  /* How a stamp is inked: slightly transparent, so the paper shows through. */
+  --vc-stamp-opacity: .88;
+
+  /* ---- type --------------------------------------------------------------- */
+
+  /* Sans for reading and controls; a book serif for titles and figures that
+     head a page, the ledger's voice; mono for hashes and codes. No web
+     fonts: the strict CSP loads nothing from elsewhere, and system fonts
+     cost nothing. */
+  --vc-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --vc-font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Charter,
+    "Bitstream Charter", Georgia, serif;
+  --vc-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  /* Stamps: narrow, heavy capitals. */
+  --vc-font-stamp: "Arial Narrow", "Helvetica Neue Condensed", "Roboto Condensed", "Liberation Sans Narrow",
+    system-ui, sans-serif;
+  /* Every figure in a column: same width, lining, and a zero that is not an O. */
+  --vc-figures: tabular-nums lining-nums slashed-zero;
+
+  --vc-text-xs: 12px;
+  --vc-text-sm: 14px;
+  --vc-text-md: 16px;
+  --vc-text-lg: 18px;
+  --vc-text-xl: 22px;
+  --vc-text-2xl: 28px;
+  --vc-text-3xl: 36px;
+  --vc-weight-regular: 400;
+  --vc-weight-medium: 500;
+  --vc-weight-bold: 650;
+  --vc-leading: 1.5;
+  --vc-leading-tight: 1.2;
+  /* Capitals of a stamp or an overline, spaced out. */
+  --vc-tracking-caps: .08em;
+
+  /* ---- space -------------------------------------------------------------- */
+
+  --vc-space-1: 4px;
+  --vc-space-2: 8px;
+  --vc-space-3: 12px;
+  --vc-space-4: 16px;
+  --vc-space-5: 20px;
+  --vc-space-6: 24px;
+  --vc-space-7: 32px;
+  --vc-space-8: 48px;
+
+  /* ---- shape -------------------------------------------------------------- */
+
+  /* Paper has nearly square corners; a control a little rounder. */
+  --vc-radius-sm: 3px;
+  --vc-radius-md: 6px;
+  --vc-radius-lg: 10px;
+  --vc-radius-full: 999px;
+  --vc-border-width: 1px;
+  /* The chain's blocks: the rounded squares of the logo. */
+  --vc-block: 14px;
+  --vc-block-radius: 4px;
+
+  /* A control's height. Thumb-sized: the app is used on a phone. */
+  --vc-control-sm: 36px;
+  --vc-control-md: 44px;
+  --vc-control-lg: 52px;
+
+  /* Sheets lie flat on the desk: a hairline below, not a glow. */
+  --vc-shadow-sm: 0 1px 0 rgba(60, 48, 20, .08);
+  --vc-shadow-md: 0 1px 0 rgba(60, 48, 20, .08), 0 4px 14px rgba(60, 48, 20, .08);
+  --vc-shadow-lg: 0 2px 0 rgba(60, 48, 20, .06), 0 18px 48px rgba(28, 36, 49, .18);
+
+  /* ---- motion ------------------------------------------------------------- */
+
+  /* Something that moves from one place to another, and something that
+     arrives. */
+  --vc-ease: cubic-bezier(.32, .72, 0, 1);
+  --vc-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --vc-duration-fast: 120ms;
+  --vc-duration: 200ms;
+  --vc-duration-slow: 320ms;
+
+  color-scheme: light;
+}
+
+/* The ledger at night. Written twice: for the system's dark preference when
+   the page has not chosen, and for an explicit choice or a dark island. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --vc-paper: #121519;
+    --vc-sunken: #0c0e11;
+    --vc-surface: #1a1e24;
+    --vc-field: #0f1215;
+    --vc-field-off: #20252c;
+    --vc-hover: #222830;
+    --vc-active: #2a313a;
+    --vc-selected: #1a2a42;
+    --vc-rule: #262c34;
+    --vc-border: #343b46;
+    --vc-border-strong: #4c5562;
+    --vc-margin: #7a403a;
+    --vc-ink: #ebe7dc;
+    --vc-ink-muted: #a5aab3;
+    --vc-ink-subtle: #737a85;
+    --vc-accent: #7eaefc;
+    --vc-accent-hover: #9cc1fd;
+    --vc-accent-active: #6094ea;
+    --vc-on-accent: #0b1424;
+    --vc-accent-soft: #172741;
+    --vc-ok: #7fd2a0;
+    --vc-ok-soft: #132a1d;
+    --vc-warn: #ecb862;
+    --vc-warn-soft: #2c2311;
+    --vc-bad: #ff9187;
+    --vc-bad-hover: #ffaba3;
+    --vc-bad-active: #f0766b;
+    --vc-bad-soft: #321715;
+    --vc-focus: #7eaefc;
+    --vc-focus-ring: rgba(126, 174, 252, .28);
+    --vc-overlay: rgba(0, 0, 0, .6);
+    --vc-stamp-opacity: .92;
+    --vc-shadow-sm: 0 1px 0 rgba(0, 0, 0, .35);
+    --vc-shadow-md: 0 1px 0 rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .35);
+    --vc-shadow-lg: 0 2px 0 rgba(0, 0, 0, .3), 0 18px 48px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"], [data-tone="dark"] {
+  --vc-paper: #121519;
+  --vc-sunken: #0c0e11;
+  --vc-surface: #1a1e24;
+  --vc-field: #0f1215;
+  --vc-field-off: #20252c;
+  --vc-hover: #222830;
+  --vc-active: #2a313a;
+  --vc-selected: #1a2a42;
+  --vc-rule: #262c34;
+  --vc-border: #343b46;
+  --vc-border-strong: #4c5562;
+  --vc-margin: #7a403a;
+  --vc-ink: #ebe7dc;
+  --vc-ink-muted: #a5aab3;
+  --vc-ink-subtle: #737a85;
+  --vc-accent: #7eaefc;
+  --vc-accent-hover: #9cc1fd;
+  --vc-accent-active: #6094ea;
+  --vc-on-accent: #0b1424;
+  --vc-accent-soft: #172741;
+  --vc-ok: #7fd2a0;
+  --vc-ok-soft: #132a1d;
+  --vc-warn: #ecb862;
+  --vc-warn-soft: #2c2311;
+  --vc-bad: #ff9187;
+  --vc-bad-hover: #ffaba3;
+  --vc-bad-active: #f0766b;
+  --vc-bad-soft: #321715;
+  --vc-focus: #7eaefc;
+  --vc-focus-ring: rgba(126, 174, 252, .28);
+  --vc-overlay: rgba(0, 0, 0, .6);
+  --vc-stamp-opacity: .92;
+  --vc-shadow-sm: 0 1px 0 rgba(0, 0, 0, .35);
+  --vc-shadow-md: 0 1px 0 rgba(0, 0, 0, .35), 0 4px 14px rgba(0, 0, 0, .35);
+  --vc-shadow-lg: 0 2px 0 rgba(0, 0, 0, .3), 0 18px 48px rgba(0, 0, 0, .55);
+  color-scheme: dark;
+}
+
+/* Once, here, instead of a media query in every component. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vc-duration-fast: 0ms;
+    --vc-duration: 0ms;
+    --vc-duration-slow: 0ms;
+  }
+}

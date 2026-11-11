@@ -1,0 +1,60 @@
+<script :setup="{ label = '', hint = '', tone = 'neutral' }: TileProps" lang="ts">
+  // One figure with what it is: invoiced this quarter, VAT, invoices issued.
+  // The figure goes in the slot (an Amount, or a plain number); `hint` is a
+  // line under it. `tone` colours the rule on top, to point at a figure that
+  // needs attention.
+  //
+  //   <Tile :label="t.home.invoiced"><Amount :amount="summary.total_base" /></Tile>
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface TileProps {
+    label?: string
+    hint?: string
+    tone?: "neutral" | "accent" | "ok" | "warn" | "bad"
+  }
+</script>
+
+<div class="tile" :class="'tone-' + tone">
+  <span class="label">{{ label }}</span>
+  <span class="figure"><slot></slot></span>
+  <span :if="hint" class="hint">{{ hint }}</span>
+</div>
+
+<style scoped>
+  .tile {
+    --rule: var(--vc-ink);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: var(--vc-space-3) var(--vc-space-4) var(--vc-space-4);
+    border-top: 2px solid var(--rule);
+    background: var(--vc-surface);
+    box-shadow: var(--vc-shadow-sm);
+    font-family: var(--vc-font-sans);
+  }
+  .tone-accent { --rule: var(--vc-accent); }
+  .tone-ok { --rule: var(--vc-ok); }
+  .tone-warn { --rule: var(--vc-warn); }
+  .tone-bad { --rule: var(--vc-bad); }
+  /* An overline, like a column head in a ledger. */
+  .label {
+    color: var(--vc-ink-muted);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
+    letter-spacing: var(--vc-tracking-caps);
+    text-transform: uppercase;
+  }
+  .figure {
+    color: var(--vc-ink);
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-xl);
+    font-variant-numeric: var(--vc-figures);
+    font-weight: var(--vc-weight-bold);
+    line-height: var(--vc-leading-tight);
+  }
+  .hint {
+    color: var(--vc-ink-muted);
+    font-size: var(--vc-text-xs);
+  }
+</style>

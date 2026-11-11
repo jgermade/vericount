@@ -1,0 +1,100 @@
+<script :setup="{ title = '', subtitle = '', ruled = false, padded = true }: CardProps" lang="ts">
+  // A sheet on the desk: one thing, with a head when there is a `title` or
+  // something in the `actions` slot, and a foot when the `foot` slot has
+  // something. `ruled` turns it into a ledger page: hairlines and the red
+  // double rule of the margin, for lists of entries and the printable
+  // invoice.
+  //
+  //   <Card :title="t.settings.seriesTitle">
+  //     <template :slot.actions><Button size="sm">…</Button></template>
+  //     …
+  //     <template :slot.foot>…</template>
+  //   </Card>
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface CardProps {
+    title?: string
+    subtitle?: string
+    ruled?: boolean | ""
+    padded?: boolean | ""
+  }
+  const flag = (value: unknown) => value === "" || value === true || value === "true"
+</script>
+
+<section class="card" :class.ruled="flag(ruled)">
+  <header :if="title || $slots.actions" class="head">
+    <div class="titles">
+      <h3 :if="title" class="title">{{ title }}</h3>
+      <p :if="subtitle" class="subtitle">{{ subtitle }}</p>
+    </div>
+    <div :if="$slots.actions" class="actions"><slot.actions /></div>
+  </header>
+  <div class="body" :class.padded="flag(padded)"><slot></slot></div>
+  <footer :if="$slots.foot" class="foot"><slot.foot /></footer>
+</section>
+
+<style scoped>
+  .card {
+    position: relative;
+    min-width: 0;
+    border: var(--vc-border-width) solid var(--vc-rule);
+    border-radius: var(--vc-radius-sm);
+    background: var(--vc-surface);
+    color: var(--vc-ink);
+    box-shadow: var(--vc-shadow-sm);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    line-height: var(--vc-leading);
+  }
+  /* A ledger page: the margin's double red rule, inset from the left. */
+  .ruled { padding-left: var(--vc-space-5); }
+  .ruled::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--vc-space-3);
+    width: 4px;
+    border-left: 1px solid var(--vc-margin);
+    border-right: 1px solid var(--vc-margin);
+    pointer-events: none;
+  }
+  .head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--vc-space-3);
+    padding: var(--vc-space-4) var(--vc-space-4) 0;
+  }
+  .titles { min-width: 0; }
+  .title {
+    margin: 0;
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-lg);
+    font-weight: var(--vc-weight-bold);
+    line-height: var(--vc-leading-tight);
+  }
+  .subtitle {
+    margin: 2px 0 0;
+    color: var(--vc-ink-muted);
+    font-size: var(--vc-text-sm);
+  }
+  .actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--vc-space-2);
+  }
+  .body { min-width: 0; }
+  .body.padded { padding: var(--vc-space-3) var(--vc-space-4) var(--vc-space-4); }
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--vc-space-2);
+    padding: var(--vc-space-3) var(--vc-space-4);
+    border-top: var(--vc-border-width) solid var(--vc-rule);
+    background: var(--vc-paper);
+  }
+</style>

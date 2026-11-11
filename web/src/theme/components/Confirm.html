@@ -1,0 +1,72 @@
+<script :setup="{ tone = 'bad', confirm = '', cancel = '', busy = false }: ConfirmProps" lang="ts">
+  // The question before something that cannot be undone, in place, where
+  // the button was: cancel an invoice, remove a user, go live. The question
+  // in the slot, two answers under it. Emits `confirm` or `cancel`; the
+  // owner decides when it goes away.
+  //
+  //   <Confirm :if="confirmingCancel" :confirm="t.detail.confirm" :cancel="t.detail.keep"
+  //            @confirm="cancelInvoice()" @cancel="confirmingCancel = false">
+  //     {{ t.detail.confirmCancel(invoice.series_number) }}
+  //   </Confirm>
+  //
+  // The answer that keeps things as they are gets the focus, so Enter does
+  // no harm. Part of the theme: imports nothing, draws only with tokens.
+  interface ConfirmProps {
+    tone?: "bad" | "warn" | "accent"
+    confirm?: string
+    cancel?: string
+    busy?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  await $mounted()
+  $self<HTMLButtonElement>(".keep")?.focus()
+</script>
+
+<div class="confirm" :class="'tone-' + tone" role="alertdialog">
+  <div class="question"><slot></slot></div>
+  <div class="answers">
+    <button type="button" class="answer go" :disabled="flag(busy)" @click="$emit('confirm')">{{ confirm }}</button>
+    <button type="button" class="answer keep" :disabled="flag(busy)" @click="$emit('cancel')">{{ cancel }}</button>
+  </div>
+</div>
+
+<style scoped>
+  .confirm {
+    --ink: var(--vc-bad);
+    --ground: var(--vc-bad-soft);
+    padding: var(--vc-space-4);
+    border: var(--vc-border-width) solid var(--ink);
+    border-radius: var(--vc-radius-md);
+    background: var(--ground);
+    color: var(--vc-ink);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-md);
+    animation: arrive var(--vc-duration) var(--vc-ease-out);
+  }
+  .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
+  .tone-accent { --ink: var(--vc-accent); --ground: var(--vc-accent-soft); }
+  .question { margin-bottom: var(--vc-space-3); font-weight: var(--vc-weight-medium); }
+  .answers { display: flex; flex-wrap: wrap; gap: var(--vc-space-2); }
+  .answer {
+    min-height: var(--vc-control-md);
+    padding: 0 var(--vc-space-4);
+    border: var(--vc-border-width) solid var(--vc-border);
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-surface);
+    color: var(--vc-ink);
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: var(--vc-weight-medium);
+    cursor: pointer;
+  }
+  .go {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--vc-on-accent);
+  }
+  .answer:focus-visible { outline: 2px solid var(--vc-focus); outline-offset: 2px; }
+  .answer:disabled { opacity: .5; cursor: default; }
+  @keyframes arrive {
+    from { opacity: 0; transform: translateY(-4px); }
+  }
+</style>

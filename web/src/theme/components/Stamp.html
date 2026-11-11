@@ -1,0 +1,61 @@
+<script :setup="{ tone = 'bad', size = 'md', flat = false }: StampProps" lang="ts">
+  // A rubber stamp on the paper: what an invoice is, in a word that cannot
+  // be missed. ANULADA in red, FACTURA DE PRUEBA in ochre, VERIFICADA in
+  // green. Slightly tilted and inked through, as a real one; `flat` keeps
+  // it straight, for a narrow place or print.
+  //
+  //   <Stamp :if="invoice.cancelled">{{ t.print.cancelled }}</Stamp>
+  //   <Stamp tone="warn" :if="!invoice.live">{{ t.print.practice }}</Stamp>
+  //
+  // It prints too: the colours are forced in print, where browsers would
+  // otherwise drop them. Part of the theme: imports nothing, draws only with
+  // tokens.
+  interface StampProps {
+    tone?: "bad" | "warn" | "ok" | "accent" | "ink"
+    size?: "sm" | "md" | "lg"
+    flat?: boolean | ""
+  }
+  const flag = (value: unknown) => value === "" || value === true || value === "true"
+</script>
+
+<span class="stamp" :class="'tone-' + tone + ' size-' + size" :class.flat="flag(flat)">
+  <span class="inner"><slot></slot></span>
+</span>
+
+<style scoped>
+  .stamp {
+    --ink: var(--vc-bad);
+    display: inline-block;
+    padding: 2px;
+    border: 2px solid var(--ink);
+    border-radius: var(--vc-radius-md);
+    color: var(--ink);
+    opacity: var(--vc-stamp-opacity);
+    transform: rotate(-4deg);
+    font-family: var(--vc-font-stamp);
+    font-size: var(--vc-text-md);
+    font-weight: 800;
+    letter-spacing: var(--vc-tracking-caps);
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  /* The double rule of a stamp: an outer and an inner frame. */
+  .inner {
+    display: block;
+    padding: var(--vc-space-1) var(--vc-space-3);
+    border: 1px solid var(--ink);
+    border-radius: var(--vc-radius-sm);
+  }
+  .flat { transform: none; }
+  .tone-warn { --ink: var(--vc-warn); }
+  .tone-ok { --ink: var(--vc-ok); }
+  .tone-accent { --ink: var(--vc-accent); }
+  .tone-ink { --ink: var(--vc-ink); }
+  .size-sm { font-size: var(--vc-text-xs); border-width: 1.5px; }
+  .size-sm .inner { padding: 2px var(--vc-space-2); }
+  .size-lg { font-size: var(--vc-text-xl); border-width: 3px; padding: 3px; }
+  .size-lg .inner { padding: var(--vc-space-2) var(--vc-space-4); }
+</style>

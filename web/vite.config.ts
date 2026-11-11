@@ -6,6 +6,10 @@ export default defineConfig({
   // `script-src 'self'` without `unsafe-eval`.
   plugins: [jq79({ safeEval: true })],
   build: {
+    // The app, and the design system's demo at /design/.
+    rollupOptions: {
+      input: { app: "index.html", design: "design/index.html" },
+    },
     // No inlined assets: `data:` URLs are not allowed by the CSP.
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },

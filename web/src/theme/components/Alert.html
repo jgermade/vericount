@@ -1,0 +1,45 @@
+<script :setup="{ tone = 'accent', title = '' }: AlertProps" lang="ts">
+  // A message about the view around it. `tone` is how much it matters:
+  // `accent` to say something, `ok` that something went well, `warn` that
+  // something needs attention (practice mode, pending records), `bad` that
+  // something failed. A rule down its left edge, like a note in a margin.
+  //
+  //   <Alert tone="warn">{{ t.list.practice }}</Alert>
+  //   <Alert tone="bad" :title="t.list.chainBrokenTitle">…</Alert>
+  //
+  // `bad` is announced as an alert, the rest as a status. Part of the theme:
+  // imports nothing, draws only with tokens.
+  interface AlertProps {
+    tone?: "accent" | "ok" | "warn" | "bad"
+    title?: string
+  }
+</script>
+
+<div class="alert" :class="'tone-' + tone" :role="tone === 'bad' ? 'alert' : 'status'">
+  <strong :if="title" class="title">{{ title }}</strong>
+  <div class="body"><slot></slot></div>
+</div>
+
+<style scoped>
+  .alert {
+    --ink: var(--vc-accent);
+    --ground: var(--vc-accent-soft);
+    padding: var(--vc-space-3) var(--vc-space-4);
+    border-left: 3px solid var(--ink);
+    border-radius: 0 var(--vc-radius-md) var(--vc-radius-md) 0;
+    background: var(--ground);
+    color: var(--vc-ink);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-sm);
+    line-height: var(--vc-leading);
+  }
+  .tone-ok { --ink: var(--vc-ok); --ground: var(--vc-ok-soft); }
+  .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
+  .tone-bad { --ink: var(--vc-bad); --ground: var(--vc-bad-soft); }
+  .title {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--ink);
+    font-weight: var(--vc-weight-bold);
+  }
+</style>

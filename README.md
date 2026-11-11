@@ -180,6 +180,7 @@ Upload it in Settings: the `.p12` or `.pfx` file it was exported to, with its pa
 - `crates/core`: domain logic without I/O (record hash, invoice totals, QR URL).
 - `crates/server`: Axum HTTP server, API, database access, migrations and security headers.
 - `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
+- `web/src/theme`: the design system: `tokens.css` (every colour, size, font and motion, light and dark) and components that import nothing and draw only with those tokens. Its demo is at `/design/` (`http://localhost:5173/design/` with `make up`).
 - `crates/aeat-mock`: mock of the AEAT record submission service, for tests, local development and practice mode.
 - `aeat/schemas`: official AEAT WSDL and XSD files.
 - `setup.sh`, `Dockerfile`, `docker/`, `docker-compose.yml`, `charts/vericount`: installation and deployment.

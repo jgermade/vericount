@@ -1,0 +1,114 @@
+<script :setup="{ items = [] }: ChainProps" lang="ts">
+  // The chain of Veri*factu records: each record a block, as in the logo,
+  // joined to the one before it. A block is filled with its tone (accepted,
+  // pending, rejected), and carries its title, a detail line, a status on
+  // the right and its hash.
+  //
+  //   <Chain :items="invoice.records.map(r => ({
+  //     key: r.id, title: t.detail.recordType[r.record_type],
+  //     detail: r.generated_at, hash: r.hash,
+  //     status: t.aeatState[r.aeat.state], tone: toneOf(r.aeat.state),
+  //   }))" />
+  //
+  // The texts come in the items: the component writes none. Part of the
+  // theme: imports nothing, draws only with tokens.
+  interface ChainItem {
+    key: string | number
+    title: string
+    detail?: string
+    status?: string
+    hash?: string
+    tone?: "neutral" | "accent" | "ok" | "warn" | "bad"
+  }
+  interface ChainProps {
+    items?: ChainItem[]
+  }
+  const short = (hash: string) => hash ? `${hash.slice(0, 8)}…${hash.slice(-4)}` : ""
+</script>
+
+<ol class="chain">
+  <li :each="item in items" :key="item.key" class="link" :class="'tone-' + (item.tone || 'neutral')">
+    <span class="block" aria-hidden="true"></span>
+    <div class="text">
+      <div class="line">
+        <strong class="title">{{ item.title }}</strong>
+        <span :if="item.status" class="status">{{ item.status }}</span>
+      </div>
+      <span :if="item.detail" class="detail">{{ item.detail }}</span>
+      <code :if="item.hash" class="hash" :title="item.hash">{{ short(item.hash || "") }}</code>
+    </div>
+  </li>
+</ol>
+
+<style scoped>
+  .chain {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: var(--vc-font-sans);
+  }
+  .link {
+    --tone: var(--vc-ink-subtle);
+    --tone-soft: var(--vc-sunken);
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--vc-block) 1fr;
+    gap: var(--vc-space-3);
+    padding-bottom: var(--vc-space-4);
+  }
+  .link:last-child { padding-bottom: 0; }
+  .tone-accent { --tone: var(--vc-accent); --tone-soft: var(--vc-accent-soft); }
+  .tone-ok { --tone: var(--vc-ok); --tone-soft: var(--vc-ok-soft); }
+  .tone-warn { --tone: var(--vc-warn); --tone-soft: var(--vc-warn-soft); }
+  .tone-bad { --tone: var(--vc-bad); --tone-soft: var(--vc-bad-soft); }
+  /* The rail from this block down to the next one. */
+  .link:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    top: calc(var(--vc-block) + 6px);
+    bottom: 0;
+    left: calc(var(--vc-block) / 2 - 1px);
+    width: 2px;
+    background: var(--vc-rule);
+  }
+  .block {
+    width: var(--vc-block);
+    height: var(--vc-block);
+    margin-top: 4px;
+    border: 2px solid var(--tone);
+    border-radius: var(--vc-block-radius);
+    background: var(--tone-soft);
+  }
+  .tone-ok .block { background: var(--tone); }
+  .text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--vc-space-2);
+  }
+  .title {
+    color: var(--vc-ink);
+    font-size: var(--vc-text-sm);
+    font-weight: var(--vc-weight-bold);
+  }
+  .status {
+    color: var(--tone);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
+    white-space: nowrap;
+  }
+  .detail {
+    color: var(--vc-ink-muted);
+    font-size: var(--vc-text-xs);
+  }
+  .hash {
+    color: var(--vc-ink-subtle);
+    font-family: var(--vc-font-mono);
+    font-size: var(--vc-text-xs);
+  }
+</style>

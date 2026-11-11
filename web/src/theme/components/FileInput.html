@@ -1,0 +1,107 @@
+<script :setup="{ accept = '', prompt = '', chosen = '', disabled = false }: FileInputProps" lang="ts">
+  // A place to drop a file, or tap to choose one: the AEAT certificate.
+  // `prompt` is what it says while empty, and `chosen` what it says once a
+  // file is picked, given its name ("{name}, listo para subir"). Emits
+  // `file` with the File, or null when the choice is cleared.
+  //
+  //   <FileInput accept=".p12,.pfx,.pem" :prompt="t.settings.certificateFile"
+  //              @file="certificateFile = $event.detail" />
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface FileInputProps {
+    accept?: string
+    prompt?: string
+    chosen?: string
+    disabled?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  let name = ""
+  let over = false
+
+  const take = (file: File | null) => {
+    name = file ? file.name : ""
+    $emit("file", file)
+  }
+  const picked = (event: Event) => {
+    const files = (event.target as HTMLInputElement).files
+    take(files && files.length ? files[0] ?? null : null)
+  }
+  const dropped = (event: DragEvent) => {
+    event.preventDefault()
+    over = false
+    if (flag(disabled)) return
+    const files = event.dataTransfer?.files
+    take(files && files.length ? files[0] ?? null : null)
+  }
+  const dragging = (event: DragEvent, on: boolean) => {
+    event.preventDefault()
+    over = on
+  }
+</script>
+
+<label class="drop" :class.over="over" :class.has="!!name" :class.disabled="flag(disabled)"
+       @dragover="dragging($event, true)" @dragleave="dragging($event, false)" @drop="dropped($event)">
+  <input type="file" class="native" :accept="accept || null" :disabled="flag(disabled)" @change="picked($event)">
+  <svg class="sheet" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M6 2.5h8l4.5 4.5v14.5h-12.5z M14 2.5v4.5h4.5" />
+    <path :if="name" class="tick" d="M8.5 14l2.5 2.5 4.5-5" />
+  </svg>
+  <span class="text">
+    <strong :if="name" class="name">{{ name }}</strong>
+    <span>{{ name ? chosen : prompt }}</span>
+  </span>
+</label>
+
+<style scoped>
+  .drop {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--vc-space-3);
+    min-height: calc(var(--vc-control-lg) + var(--vc-space-4));
+    padding: var(--vc-space-3) var(--vc-space-4);
+    border: 1.5px dashed var(--vc-border-strong);
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-paper);
+    color: var(--vc-ink-muted);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-sm);
+    cursor: pointer;
+    transition: background var(--vc-duration-fast) ease, border-color var(--vc-duration-fast) ease;
+  }
+  .drop:hover, .over {
+    border-color: var(--vc-accent);
+    background: var(--vc-accent-soft);
+  }
+  .has {
+    border-style: solid;
+    border-color: var(--vc-ok);
+    background: var(--vc-ok-soft);
+    color: var(--vc-ink);
+  }
+  .disabled { opacity: .5; cursor: default; }
+  .native {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+  .drop:focus-within { outline: 2px solid var(--vc-focus); outline-offset: 2px; }
+  .sheet {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+  }
+  .tick { stroke: var(--vc-ok); stroke-width: 2; stroke-linecap: round; }
+  .text { display: flex; flex-direction: column; min-width: 0; }
+  .name {
+    overflow: hidden;
+    color: var(--vc-ink);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>

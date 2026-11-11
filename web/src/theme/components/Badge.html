@@ -1,0 +1,48 @@
+<script :setup="{ tone = 'neutral', dot = false }: BadgeProps" lang="ts">
+  // A short label beside something: the AEAT state of an invoice, a role,
+  // "inactiva". `tone` says how it is going: `ok`, `warn`, `bad`, `accent`
+  // or `neutral`. `dot` puts a dot before the text, for a state.
+  //
+  //   <Badge tone="ok" dot>{{ t.aeatState.accepted }}</Badge>
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface BadgeProps {
+    tone?: "neutral" | "accent" | "ok" | "warn" | "bad"
+    dot?: boolean | ""
+  }
+  const flag = (value: unknown) => value === "" || value === true || value === "true"
+</script>
+
+<span class="badge" :class="'tone-' + tone">
+  <span :if="flag(dot)" class="dot" aria-hidden="true"></span><slot></slot>
+</span>
+
+<style scoped>
+  .badge {
+    --ink: var(--vc-ink-muted);
+    --ground: var(--vc-sunken);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--vc-space-1);
+    padding: 1px var(--vc-space-2);
+    border-radius: var(--vc-radius-full);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
+    line-height: 1.5;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .tone-accent { --ink: var(--vc-accent); --ground: var(--vc-accent-soft); }
+  .tone-ok { --ink: var(--vc-ok); --ground: var(--vc-ok-soft); }
+  .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
+  .tone-bad { --ink: var(--vc-bad); --ground: var(--vc-bad-soft); }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+</style>

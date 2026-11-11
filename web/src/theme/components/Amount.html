@@ -1,0 +1,78 @@
+<script :setup="{ amount = '0', currency = 'EUR', size = '', signed = false, muted = false }: AmountProps" lang="ts">
+  // A sum of money, as a ledger writes it: figures of one width that line
+  // up in a column, the cents a step smaller, the currency quiet after it.
+  // Negative sums are red. `amount` is the API's decimal string (or a
+  // number); it is formatted for Spain. (Not `value`: jq79 binds `:value` as
+  // the DOM property, so a component never receives it.)
+  //
+  //   <Amount :amount="invoice.total_amount" size="lg" />
+  //   <Amount :amount="tax.tax_amount" signed />   (+21,00 €)
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface AmountProps {
+    amount?: string | number
+    currency?: string
+    /// Empty: the size of the text around it.
+    size?: "" | "sm" | "md" | "lg" | "xl"
+    signed?: boolean | ""
+    muted?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+
+  interface Parts { sign: string; whole: string; fraction: string; symbol: string; symbolFirst: boolean }
+  const split = (raw: string | number, code: string, withSign: boolean): Parts => {
+    const number = Number(raw)
+    const format = new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: code,
+      // Spanish leaves out the thousands separator below 10 000 by default;
+      // a column of figures reads better with it everywhere.
+      useGrouping: "always",
+    })
+    const parts = format.formatToParts(Math.abs(Number.isFinite(number) ? number : 0))
+    const of = (type: string) => parts.filter(p => p.type === type).map(p => p.value).join("")
+    const integer = parts.filter(p => p.type === "integer" || p.type === "group").map(p => p.value).join("")
+    const symbolAt = parts.findIndex(p => p.type === "currency")
+    const integerAt = parts.findIndex(p => p.type === "integer")
+    return {
+      sign: number < 0 ? "−" : withSign && number > 0 ? "+" : "",
+      whole: integer,
+      fraction: of("fraction") ? of("decimal") + of("fraction") : "",
+      symbol: of("currency"),
+      symbolFirst: symbolAt < integerAt,
+    }
+  }
+  $: parts = split(amount, currency, flag(signed))
+  $: negative = Number(amount) < 0
+</script>
+
+<span class="amount" :class="'size-' + size" :class.negative="negative" :class.muted="flag(muted)"><span
+  :if="parts.symbolFirst" class="symbol">{{ parts.symbol }}</span>{{ parts.sign }}{{ parts.whole }}<span
+  class="fraction">{{ parts.fraction }}</span><span :if="!parts.symbolFirst" class="symbol">&nbsp;{{ parts.symbol }}</span></span>
+
+<style scoped>
+  .amount {
+    color: var(--vc-ink);
+    font-family: var(--vc-font-sans);
+    font-size: inherit;
+    font-variant-numeric: var(--vc-figures);
+    white-space: nowrap;
+  }
+  .fraction { font-size: .8em; }
+  .symbol {
+    color: var(--vc-ink-muted);
+    font-size: .8em;
+  }
+  .negative, .negative .symbol { color: var(--vc-bad); }
+  .muted { color: var(--vc-ink-muted); }
+  .size-sm { font-size: var(--vc-text-sm); }
+  .size-md { font-size: var(--vc-text-md); }
+  .size-lg { font-size: var(--vc-text-xl); font-weight: var(--vc-weight-medium); }
+  /* The figure a page is about: in the ledger's serif. */
+  .size-xl {
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-3xl);
+    font-weight: var(--vc-weight-bold);
+    letter-spacing: -.01em;
+  }
+</style>

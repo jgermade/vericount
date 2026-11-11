@@ -1,0 +1,49 @@
+<script :setup="{ label = '', hint = '', error = '', optional = '' }: FieldProps" lang="ts">
+  // A labelled control: the label above, the control in the slot, and under
+  // it a hint or, when there is one, the error, which takes its place. The
+  // whole field is a <label>, so tapping the label focuses the control.
+  //
+  //   <Field :label="t.settings.nif" :hint="t.settings.nifHint" :error="errors.nif">
+  //     <TextInput :model="company.nif" maxlength="9" />
+  //   </Field>
+  //
+  // `optional` is a word after the label ("opcional"), passed in like every
+  // text. Part of the theme: imports nothing, draws only with tokens.
+  interface FieldProps {
+    label?: string
+    hint?: string
+    error?: string
+    optional?: string
+  }
+</script>
+
+<label class="field" :class.invalid="!!error">
+  <span class="label">{{ label }}<span :if="optional" class="optional">{{ optional }}</span></span>
+  <slot></slot>
+  <span :if="error" class="error" role="alert">{{ error }}</span>
+  <span :elseif="hint" class="hint">{{ hint }}</span>
+</label>
+
+<style scoped>
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vc-space-1);
+    min-width: 0;
+    margin-bottom: var(--vc-space-4);
+    font-family: var(--vc-font-sans);
+  }
+  .label {
+    color: var(--vc-ink);
+    font-size: var(--vc-text-sm);
+    font-weight: var(--vc-weight-medium);
+  }
+  .optional {
+    margin-left: var(--vc-space-2);
+    color: var(--vc-ink-subtle);
+    font-weight: var(--vc-weight-regular);
+  }
+  .hint, .error { font-size: var(--vc-text-xs); }
+  .hint { color: var(--vc-ink-muted); }
+  .error { color: var(--vc-bad); font-weight: var(--vc-weight-medium); }
+</style>

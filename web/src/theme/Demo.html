@@ -1,0 +1,639 @@
+<script :setup lang="ts">
+  // The design system on one page, at /design/: the tokens, then every
+  // component in its variants and states, with what each one is bound to
+  // printed beside it, and at the end a few of vericount's own screens put
+  // together from them. See RECORD/2026-11-11.design-system.WIP.md.
+  //
+  // It imports the theme and nothing of the app's: no api, no app.css, no
+  // texts. It is a page for whoever builds the app, so it is written in
+  // English; the sample data is Spanish, as the app's is.
+  const [
+    Alert, Amount, Badge, Button, Card, Chain, Checkbox, Confirm, Entry, Field,
+    FileInput, Hash, Segmented, Select, Spinner, Stamp, TabBar, TextInput, Tile,
+  ] = await Promise.all([
+    import("./components/Alert.html"),
+    import("./components/Amount.html"),
+    import("./components/Badge.html"),
+    import("./components/Button.html"),
+    import("./components/Card.html"),
+    import("./components/Chain.html"),
+    import("./components/Checkbox.html"),
+    import("./components/Confirm.html"),
+    import("./components/Entry.html"),
+    import("./components/Field.html"),
+    import("./components/FileInput.html"),
+    import("./components/Hash.html"),
+    import("./components/Segmented.html"),
+    import("./components/Select.html"),
+    import("./components/Spinner.html"),
+    import("./components/Stamp.html"),
+    import("./components/TabBar.html"),
+    import("./components/TextInput.html"),
+    import("./components/Tile.html"),
+  ])
+
+  // ---- the tone of the page ----------------------------------------------------
+
+  const THEMES = [
+    { value: "auto", label: "Auto" },
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+  ]
+  const stored = (() => {
+    try { return localStorage.getItem("vericount.design-theme") ?? "auto" } catch { return "auto" }
+  })()
+  let theme = stored
+  const applyTheme = (choice: string) => {
+    const root = document.documentElement
+    if (choice === "auto") delete root.dataset.theme
+    else root.dataset.theme = choice
+    try { localStorage.setItem("vericount.design-theme", choice) } catch { /* private mode */ }
+    requestAnimationFrame(() => readTokens())
+  }
+  $: applyTheme(theme)
+
+  // ---- tokens -------------------------------------------------------------------
+
+  const COLOURS = [
+    ["Grounds", ["paper", "sunken", "surface", "field", "field-off", "hover", "active", "selected"]],
+    ["Lines", ["rule", "border", "border-strong", "margin"]],
+    ["Ink", ["ink", "ink-muted", "ink-subtle"]],
+    ["Tones", ["accent", "accent-soft", "ok", "ok-soft", "warn", "warn-soft", "bad", "bad-soft"]],
+  ] as const
+  // What each colour token is now, read from the page: it changes with the
+  // tone, so it is read again after every switch.
+  let values: Record<string, string> = {}
+  const readTokens = () => {
+    const style = getComputedStyle(document.documentElement)
+    const next: Record<string, string> = {}
+    for (const [, names] of COLOURS) for (const name of names) {
+      next[name] = style.getPropertyValue(`--vc-${name}`).trim()
+    }
+    values = next
+    // The swatches are painted through the CSSOM: the CSP allows no style
+    // attributes.
+    for (const swatch of $$self<HTMLElement>(".swatch")) {
+      swatch.style.background = `var(--vc-${swatch.dataset.token})`
+    }
+  }
+
+  // ---- state the components are bound to ------------------------------------------
+
+  let clicks = 0
+  let saving = false
+  const save = () => {
+    saving = true
+    setTimeout(() => { saving = false }, 1200)
+  }
+  let nif = "B12345674"
+  let price = "1250.5"
+  let badNif = "B1234"
+  let customer = ""
+  const CUSTOMERS = [
+    { value: "1", label: "Construcciones Ría SL" },
+    { value: "2", label: "Talleres del Norte SA" },
+    { value: "3", label: "María López Pérez" },
+  ]
+  let isCustomer = true
+  let isSupplier = false
+  let filter = "all"
+  const FILTERS = [
+    { value: "all", label: "Todas" },
+    { value: "pending", label: "Pendientes" },
+    { value: "rejected", label: "Rechazadas" },
+  ]
+  let quarter = "4"
+  const QUARTERS = ["1", "2", "3", "4"].map(q => ({ value: q, label: `${q}T` }))
+  let file: File | null = null
+  let confirming = false
+  let confirmed = 0
+  const confirmCancel = () => {
+    confirmed++
+    confirming = false
+  }
+  let section = "invoices"
+  const ICONS = {
+    home: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
+    invoices: "M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7",
+    contacts: "M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 1 0 0 7z M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6 M16 4.5a3.5 3.5 0 0 1 0 6.5 M18 14.5c1.8.9 3 2.9 3 5.5",
+    settings: "M4 6h9 M17 6h3 M15 4v4 M4 12h3 M11 12h9 M9 10v4 M4 18h11 M19 18h1 M17 16v4",
+  }
+  const SECTIONS = [
+    { value: "home", label: "Inicio", icon: ICONS.home },
+    { value: "invoices", label: "Facturas", icon: ICONS.invoices },
+    { value: "contacts", label: "Contactos", icon: ICONS.contacts },
+    { value: "settings", label: "Ajustes", icon: ICONS.settings },
+  ]
+
+  // Sample records of one invoice, for the chain and the hashes.
+  const HASH_A = "3C464DAF61ACB320B19F9F3A5F5C5D1E8B7D2E2A6F0A4C9B1D3E5F7A9B0C2D4E"
+  const HASH_B = "F7A1B6E0C3D2948FA0B1C2D3E4F5061728394A5B6C7D8E9F0A1B2C3D4E5F6A7B"
+  const HASH_C = "9D0E1F2A3B4C5D6E7F8091A2B3C4D5E6F708192A3B4C5D6E7F8091A2B3C4D5E"
+  const RECORDS = [
+    { key: 1, title: "Alta", detail: "11/11/2026 10:42:07", status: "enviada", tone: "ok", hash: HASH_A },
+    { key: 2, title: "Anulación", detail: "11/11/2026 12:03:51", status: "rechazada", tone: "bad", hash: HASH_B },
+    { key: 3, title: "Anulación · subsanación", detail: "11/11/2026 12:20:14", status: "pendiente", tone: "warn", hash: HASH_C },
+  ]
+  const INVOICES = [
+    { id: 3, number: "A2026-0003", customer: "María López Pérez", date: "11/11/2026", total: "96.80", state: "pending" },
+    { id: 2, number: "A2026-0002", customer: "Talleres del Norte SA", date: "08/11/2026", total: "14520.00", state: "accepted" },
+    { id: 1, number: "A2026-0001", customer: "Construcciones Ría SL", date: "02/11/2026", total: "1512.50", state: "rejected" },
+  ]
+  const STATE = {
+    pending: { tone: "warn", label: "pendiente" },
+    accepted: { tone: "ok", label: "enviada" },
+    rejected: { tone: "bad", label: "rechazada" },
+  } as const
+  let opened = 0
+
+  await $mounted()
+  readTokens()
+</script>
+
+<header class="masthead">
+  <img class="logo" src="/logo.svg" alt="">
+  <div class="titles">
+    <h1>vericount <span class="thin">· design system</span></h1>
+    <p>The ledger: warm paper, ink in the logo's blue, hairline rules, figures that line up, and stamps.</p>
+  </div>
+  <Segmented :model="theme" :options="THEMES" label="Tone of the page" />
+</header>
+
+<main class="page">
+  <nav class="index" aria-label="Sections">
+    <a href="#colours">Colours</a><a href="#type">Type</a><a href="#shape">Shape</a>
+    <a href="#display">Display</a><a href="#records">Records</a><a href="#forms">Forms</a>
+    <a href="#navigation">Navigation</a><a href="#screens">Screens</a>
+  </nav>
+
+  <!-- ---- Foundations ---------------------------------------------------------- -->
+
+  <section id="colours" class="section">
+    <h2>Colours</h2>
+    <p class="lead">By role, never by hue: <code>--vc-paper</code>, not "beige". Every one is redefined for the dark tone, and any element can be an island of the other tone with <code>data-tone</code>.</p>
+    <div :each="group in COLOURS" class="swatches">
+      <h3>{{ group[0] }}</h3>
+      <div class="swatch-grid">
+        <figure :each="name in group[1]" class="swatch-card">
+          <span class="swatch" :data-token="name"></span>
+          <figcaption><code>--vc-{{ name }}</code><span>{{ values[name] }}</span></figcaption>
+        </figure>
+      </div>
+    </div>
+    <div class="island" data-tone="dark">
+      <strong>An island of dark</strong> on this page, with <code>data-tone="dark"</code>:
+      <Badge tone="ok" dot>enviada</Badge> <Button size="sm">A button</Button>
+    </div>
+  </section>
+
+  <section id="type" class="section">
+    <h2>Type</h2>
+    <p class="lead">Sans for reading and controls. A book serif for titles and the figure a page is about: the ledger's voice. Mono for hashes. No web fonts: the CSP loads nothing from elsewhere.</p>
+    <div class="type-samples">
+      <p class="serif-xl">Libro de facturas emitidas</p>
+      <p class="sans-md">Las facturas emitidas no se pueden editar ni borrar, solo anular.</p>
+      <p class="mono-sm">3C46 4DAF 61AC B320 … 2D4E</p>
+    </div>
+    <h3>Figures</h3>
+    <p class="lead">Tabular, lining, with a slashed zero: a column of sums lines up digit by digit.</p>
+    <div class="figures">
+      <Amount amount="1512.50" size="md" /><Amount amount="14520" size="md" /><Amount amount="96.8" size="md" /><Amount amount="-250" size="md" />
+    </div>
+    <div class="figures-xl"><Amount amount="16129.30" size="xl" /></div>
+  </section>
+
+  <section id="shape" class="section">
+    <h2>Shape &amp; motion</h2>
+    <p class="lead">Paper has nearly square corners; controls are a little rounder and thumb-sized (36, 44, 52 px). Sheets lie flat: a hairline below, not a glow. The block is the logo's.</p>
+    <div class="shapes">
+      <span class="shape r-sm">radius-sm</span>
+      <span class="shape r-md">radius-md</span>
+      <span class="shape r-lg">radius-lg</span>
+      <span class="shape s-md">shadow-md</span>
+      <span class="shape s-lg">shadow-lg</span>
+      <span class="block-sample" aria-hidden="true"></span>
+    </div>
+  </section>
+
+  <!-- ---- Display ------------------------------------------------------------------ -->
+
+  <section id="display" class="section">
+    <h2>Display</h2>
+
+    <h3>Button</h3>
+    <div class="row">
+      <Button variant="primary" @click="clicks++">Emitir factura</Button>
+      <Button @click="clicks++">Revisar</Button>
+      <Button variant="ghost" @click="clicks++">Volver</Button>
+      <Button variant="danger" @click="clicks++">Anular factura</Button>
+      <Button disabled>Deshabilitado</Button>
+    </div>
+    <div class="row">
+      <Button size="sm">Pequeño</Button>
+      <Button size="lg" variant="primary" :loading="saving" @click="save()">Guardar</Button>
+      <span class="bound">clicks = {{ clicks }} · saving = {{ saving }}</span>
+    </div>
+
+    <h3>Badge</h3>
+    <div class="row">
+      <Badge tone="ok" dot>enviada</Badge>
+      <Badge tone="warn" dot>pendiente</Badge>
+      <Badge tone="bad" dot>rechazada</Badge>
+      <Badge tone="accent">de prueba</Badge>
+      <Badge>inactiva</Badge>
+    </div>
+
+    <h3>Stamp</h3>
+    <div class="row stamps">
+      <Stamp>Anulada</Stamp>
+      <Stamp tone="warn">Factura de prueba</Stamp>
+      <Stamp tone="ok" size="lg">Verificada</Stamp>
+      <Stamp tone="accent" size="sm" flat>Veri*factu</Stamp>
+    </div>
+
+    <h3>Alert</h3>
+    <div class="stack">
+      <Alert tone="warn" title="Modo de prueba">Estas facturas no son reales. Sus registros se envían a una simulación de la AEAT.</Alert>
+      <Alert tone="bad">La cadena de registros está rota en el registro 12. No emitas facturas hasta revisarlo.</Alert>
+      <Alert tone="ok">Certificado guardado.</Alert>
+      <Alert>3 registros pendientes de enviar a la AEAT.</Alert>
+    </div>
+
+    <h3>Card · Tile · Spinner</h3>
+    <div class="cards">
+      <Card title="Series de facturación" subtitle="Una numeración por serie">
+        <template :slot.actions><Button size="sm" variant="ghost">Añadir</Button></template>
+        Los datos de la empresa aparecen en todas las facturas.
+        <template :slot.foot><Button size="sm">Cancelar</Button><Button size="sm" variant="primary">Guardar</Button></template>
+      </Card>
+      <div class="tiles">
+        <Tile label="Facturado"><Amount amount="16129.30" /></Tile>
+        <Tile label="IVA repercutido" hint="21 % sobre 15 210,00 €"><Amount amount="3194.10" /></Tile>
+        <Tile label="Emitidas">3</Tile>
+        <Tile label="Rechazadas" tone="bad">1</Tile>
+      </div>
+      <p class="row"><Spinner label="Cargando" /> <span class="bound">Spinner</span></p>
+    </div>
+  </section>
+
+  <!-- ---- Records ------------------------------------------------------------------- -->
+
+  <section id="records" class="section">
+    <h2>Records</h2>
+    <p class="lead">What vericount is about: sums, the ledger's lines, and the chain of Veri*factu records.</p>
+
+    <h3>Amount</h3>
+    <div class="row amounts">
+      <Amount amount="1250.5" size="sm" /><Amount amount="1250.5" size="md" /><Amount amount="1250.5" size="lg" />
+      <Amount amount="21" signed size="md" /><Amount amount="-96.8" size="md" />
+    </div>
+
+    <h3>Hash</h3>
+    <div class="stack">
+      <Hash :hash="HASH_A" />
+      <Hash :hash="HASH_A" full />
+      <Hash hash="" empty="primer registro" />
+    </div>
+
+    <h3>Entry, in a ruled card</h3>
+    <Card ruled :padded="false">
+      <div class="entries">
+        <Entry :each="item in INVOICES" :key="item.id" :title="item.number" :subtitle="item.date + ' · ' + item.customer"
+               interactive @click="opened = item.id">
+          <template :slot.tags><Badge :tone="STATE[item.state].tone" dot>{{ STATE[item.state].label }}</Badge></template>
+          <template :slot.aside><Amount :amount="item.total" /></template>
+        </Entry>
+      </div>
+    </Card>
+    <p class="bound">opened = {{ opened }}</p>
+
+    <h3>Chain</h3>
+    <Card><Chain :items="RECORDS" /></Card>
+  </section>
+
+  <!-- ---- Forms ----------------------------------------------------------------------- -->
+
+  <section id="forms" class="section">
+    <h2>Forms</h2>
+    <div class="form-grid">
+      <div>
+        <Field label="NIF" hint="9 letras y números">
+          <TextInput :model="nif" maxlength="9" />
+        </Field>
+        <Field label="NIF" error="Revisa el NIF: tiene 9 letras y números.">
+          <TextInput :model="badNif" invalid />
+        </Field>
+        <Field label="Precio" optional="sin IVA">
+          <TextInput :model="price" inputmode="decimal" suffix="€" align="end" />
+        </Field>
+        <Field label="Cliente">
+          <Select :model="customer" :options="CUSTOMERS" placeholder="Elige un cliente" />
+        </Field>
+        <Field label="Deshabilitado">
+          <TextInput model="B12345674" disabled />
+        </Field>
+      </div>
+      <div>
+        <div class="stack tight">
+          <Checkbox :model="isCustomer">Cliente</Checkbox>
+          <Checkbox :model="isSupplier">Proveedor</Checkbox>
+        </div>
+        <p class="row"><Segmented :model="filter" :options="FILTERS" label="Facturas" /></p>
+        <p class="row"><Segmented :model="quarter" :options="QUARTERS" label="Trimestre" /></p>
+        <FileInput accept=".p12,.pfx,.pem" prompt="Arrastra aquí el certificado (.p12, .pfx o .pem) o toca para elegirlo"
+                   chosen="Listo para subir" @file="file = $event.detail" />
+        <p class="bound">
+          nif = {{ nif }} · price = {{ price }} · customer = {{ customer || "∅" }}<br>
+          isCustomer = {{ isCustomer }} · isSupplier = {{ isSupplier }} · filter = {{ filter }} · quarter = {{ quarter }}<br>
+          file = {{ file ? file.name : "∅" }}
+        </p>
+      </div>
+    </div>
+
+    <h3>Confirm</h3>
+    <Button :if="!confirming" variant="danger" @click="confirming = true">Anular factura</Button>
+    <Confirm :if="confirming" confirm="Sí, anular" cancel="No"
+             @confirm="confirmCancel()" @cancel="confirming = false">
+      ¿Anular la factura A2026-0002? No se puede deshacer.
+    </Confirm>
+    <p class="bound">confirmed = {{ confirmed }}</p>
+  </section>
+
+  <!-- ---- Navigation -------------------------------------------------------------------- -->
+
+  <section id="navigation" class="section">
+    <h2>Navigation</h2>
+    <p class="lead">The sections at the foot of the screen, where the thumb reaches. The one that is on carries the logo's block.</p>
+    <div class="phone-foot"><TabBar :model="section" :items="SECTIONS" label="Secciones" /></div>
+    <p class="bound">section = {{ section }}</p>
+  </section>
+
+  <!-- ---- Screens ------------------------------------------------------------------------- -->
+
+  <section id="screens" class="section">
+    <h2>Screens</h2>
+    <p class="lead">Some of vericount's own screens, put together from the components alone.</p>
+    <div class="phones">
+      <div class="phone">
+        <div class="phone-body">
+          <h3 class="screen-title">4.º trimestre de 2026</h3>
+          <Alert tone="warn">Modo de prueba: estas facturas no son reales.</Alert>
+          <div class="tiles">
+            <Tile label="Facturado"><Amount amount="16129.30" /></Tile>
+            <Tile label="IVA"><Amount amount="3194.10" /></Tile>
+          </div>
+          <Card ruled :padded="false">
+            <div class="entries">
+              <Entry :each="item in INVOICES" :key="item.id" :title="item.number" :subtitle="item.customer" interactive>
+                <template :slot.tags><Badge :tone="STATE[item.state].tone" dot>{{ STATE[item.state].label }}</Badge></template>
+                <template :slot.aside><Amount :amount="item.total" /></template>
+              </Entry>
+            </div>
+          </Card>
+        </div>
+        <TabBar model="home" :items="SECTIONS" label="Secciones" />
+      </div>
+
+      <div class="phone">
+        <div class="phone-body">
+          <div class="screen-head">
+            <h3 class="screen-title">Factura A2026-0001</h3>
+            <Stamp size="sm">Anulada</Stamp>
+          </div>
+          <Card ruled>
+            <dl class="pairs">
+              <dt>Cliente</dt><dd>Construcciones Ría SL<br><span class="muted">B70000004</span></dd>
+              <dt>Fecha</dt><dd>02/11/2026</dd>
+              <dt>Base</dt><dd class="num"><Amount amount="1250" /></dd>
+              <dt>IVA 21 %</dt><dd class="num"><Amount amount="262.5" /></dd>
+              <dt class="total">Total</dt><dd class="num total"><Amount amount="1512.50" size="lg" /></dd>
+            </dl>
+          </Card>
+          <Card title="Registros Veri*factu"><Chain :items="RECORDS" /></Card>
+          <Button variant="primary" block>Volver a enviar a la AEAT</Button>
+        </div>
+        <TabBar model="invoices" :items="SECTIONS" label="Secciones" />
+      </div>
+
+      <div class="phone">
+        <div class="phone-body">
+          <h3 class="screen-title">Envío a la AEAT</h3>
+          <Card title="Certificado" subtitle="Se guarda cifrado">
+            <FileInput accept=".p12,.pfx,.pem" prompt="Arrastra el certificado o toca para elegirlo" chosen="Listo para subir" />
+            <Field label="Contraseña del certificado"><TextInput type="password" /></Field>
+            <Button variant="primary" block>Subir certificado</Button>
+          </Card>
+          <Card title="Pasar a modo real">
+            <p class="muted">Las facturas serán reales y se enviarán a la AEAT. No se puede volver al modo de prueba.</p>
+            <Button variant="danger" block>Activar modo real</Button>
+          </Card>
+        </div>
+        <TabBar model="settings" :items="SECTIONS" label="Secciones" />
+      </div>
+    </div>
+  </section>
+</main>
+
+<style scoped>
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vc-space-4);
+    padding: var(--vc-space-6) var(--vc-space-5);
+    border-bottom: var(--vc-border-width) solid var(--vc-rule);
+    background: var(--vc-surface);
+  }
+  .logo { width: 48px; height: 48px; }
+  .titles { flex: 1; min-width: 14rem; }
+  h1 {
+    margin: 0;
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-2xl);
+    line-height: var(--vc-leading-tight);
+  }
+  .thin { color: var(--vc-ink-muted); font-weight: var(--vc-weight-regular); }
+  .titles p { margin: var(--vc-space-1) 0 0; color: var(--vc-ink-muted); font-size: var(--vc-text-sm); }
+
+  .page {
+    max-width: 68rem;
+    margin: 0 auto;
+    padding: 0 var(--vc-space-5) var(--vc-space-8);
+  }
+  .index {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    gap: var(--vc-space-4);
+    overflow-x: auto;
+    padding: var(--vc-space-3) 0;
+    border-bottom: var(--vc-border-width) solid var(--vc-rule);
+    background: var(--vc-paper);
+    font-size: var(--vc-text-sm);
+  }
+  .index a { color: var(--vc-ink-muted); text-decoration: none; white-space: nowrap; }
+  .index a:hover { color: var(--vc-accent); }
+
+  .section { padding-top: var(--vc-space-7); scroll-margin-top: var(--vc-space-8); }
+  h2 {
+    margin: 0 0 var(--vc-space-2);
+    padding-bottom: var(--vc-space-2);
+    border-bottom: 2px solid var(--vc-ink);
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-xl);
+  }
+  h3 {
+    margin: var(--vc-space-6) 0 var(--vc-space-3);
+    color: var(--vc-ink-muted);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-bold);
+    letter-spacing: var(--vc-tracking-caps);
+    text-transform: uppercase;
+  }
+  .lead { max-width: 44rem; margin: 0; color: var(--vc-ink-muted); }
+  code { font-family: var(--vc-font-mono); font-size: .9em; }
+  .muted { color: var(--vc-ink-muted); font-size: var(--vc-text-sm); }
+  .bound {
+    color: var(--vc-ink-subtle);
+    font-family: var(--vc-font-mono);
+    font-size: var(--vc-text-xs);
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--vc-space-3); margin: var(--vc-space-3) 0; }
+  .stack { display: flex; flex-direction: column; align-items: flex-start; gap: var(--vc-space-3); }
+  .stack > * { align-self: stretch; }
+  .stack.tight { gap: 0; }
+  .stamps { gap: var(--vc-space-6); padding: var(--vc-space-2) 0; }
+
+  .swatch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: var(--vc-space-3);
+  }
+  .swatch-card {
+    margin: 0;
+    overflow: hidden;
+    border: var(--vc-border-width) solid var(--vc-rule);
+    border-radius: var(--vc-radius-sm);
+    background: var(--vc-surface);
+  }
+  .swatch { display: block; height: 3.5rem; border-bottom: var(--vc-border-width) solid var(--vc-rule); }
+  .swatch-card figcaption {
+    display: flex;
+    flex-direction: column;
+    padding: var(--vc-space-2);
+    font-size: var(--vc-text-xs);
+  }
+  .swatch-card figcaption span { color: var(--vc-ink-muted); font-family: var(--vc-font-mono); }
+  .island {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--vc-space-2);
+    margin-top: var(--vc-space-5);
+    padding: var(--vc-space-4);
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-paper);
+    color: var(--vc-ink);
+  }
+
+  .type-samples p { margin: var(--vc-space-2) 0; }
+  .serif-xl { font-family: var(--vc-font-serif); font-size: var(--vc-text-3xl); font-weight: var(--vc-weight-bold); line-height: var(--vc-leading-tight); }
+  .sans-md { font-size: var(--vc-text-md); }
+  .mono-sm { color: var(--vc-ink-muted); font-family: var(--vc-font-mono); font-size: var(--vc-text-sm); }
+  .figures {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    padding: var(--vc-space-3) var(--vc-space-4);
+    border-left: 3px double var(--vc-margin);
+    background: var(--vc-surface);
+  }
+  .figures-xl { margin-top: var(--vc-space-4); }
+
+  .shapes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--vc-space-4); margin-top: var(--vc-space-4); }
+  .shape {
+    display: grid;
+    place-items: center;
+    width: 7rem;
+    height: 4.5rem;
+    border: var(--vc-border-width) solid var(--vc-rule);
+    background: var(--vc-surface);
+    color: var(--vc-ink-muted);
+    font-family: var(--vc-font-mono);
+    font-size: var(--vc-text-xs);
+  }
+  .r-sm { border-radius: var(--vc-radius-sm); }
+  .r-md { border-radius: var(--vc-radius-md); }
+  .r-lg { border-radius: var(--vc-radius-lg); }
+  .s-md { box-shadow: var(--vc-shadow-md); }
+  .s-lg { box-shadow: var(--vc-shadow-lg); }
+  .block-sample {
+    width: calc(var(--vc-block) * 2);
+    height: calc(var(--vc-block) * 2);
+    border-radius: calc(var(--vc-block-radius) * 2);
+    background: var(--vc-accent);
+  }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--vc-space-4); align-items: start; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--vc-space-3); }
+  .amounts { gap: var(--vc-space-5); }
+  .entries { padding: 0 var(--vc-space-2) 0 0; }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--vc-space-6); margin-top: var(--vc-space-4); }
+
+  .phone-foot {
+    max-width: 24rem;
+    margin-top: var(--vc-space-4);
+    overflow: hidden;
+    border: var(--vc-border-width) solid var(--vc-rule);
+    border-radius: var(--vc-radius-lg);
+    padding-top: var(--vc-space-4);
+    background: var(--vc-paper);
+  }
+
+  .phones {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: var(--vc-space-6);
+    margin-top: var(--vc-space-5);
+  }
+  .phone {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    max-width: 24rem;
+    border: 8px solid var(--vc-ink);
+    border-radius: 28px;
+    background: var(--vc-paper);
+    box-shadow: var(--vc-shadow-lg);
+  }
+  .phone-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--vc-space-3);
+    padding: var(--vc-space-4);
+  }
+  .screen-head { display: flex; align-items: center; justify-content: space-between; gap: var(--vc-space-3); }
+  .screen-title {
+    margin: 0;
+    color: var(--vc-ink);
+    font-family: var(--vc-font-serif);
+    font-size: var(--vc-text-xl);
+    font-weight: var(--vc-weight-bold);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .pairs {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--vc-space-2) var(--vc-space-4);
+    margin: 0;
+    font-size: var(--vc-text-sm);
+  }
+  .pairs dt { color: var(--vc-ink-muted); }
+  .pairs dd { margin: 0; }
+  .num { text-align: right; }
+  .total { padding-top: var(--vc-space-2); border-top: 2px solid var(--vc-ink); color: var(--vc-ink); font-weight: var(--vc-weight-bold); }
+</style>

@@ -1,0 +1,115 @@
+<script :setup="{
+  model = '',
+  type = 'text',
+  placeholder = '',
+  inputmode = '',
+  autocomplete = '',
+  maxlength = '',
+  prefix = '',
+  suffix = '',
+  align = 'start',
+  required = false,
+  disabled = false,
+  invalid = false
+}: TextInputProps" lang="ts">
+  // A line of text. The value goes up through `:model` and as `input` on
+  // every keystroke; `change` when it is committed, `enter` on Enter.
+  // `prefix` and `suffix` are units inside the box ("€", "%", "uds."), and
+  // `align="end"` lines numbers up on the right, as in a ledger column.
+  //
+  //   <TextInput :model="line.unit_price" inputmode="decimal" suffix="€" align="end" />
+  //
+  // `invalid` draws it in red; put it in a Field to say why. Part of the
+  // theme: imports nothing, draws only with tokens.
+  interface TextInputProps {
+    model?: string | number
+    type?: string
+    placeholder?: string
+    inputmode?: string
+    autocomplete?: string
+    maxlength?: string | number
+    prefix?: string
+    suffix?: string
+    align?: "start" | "end"
+    required?: boolean | ""
+    disabled?: boolean | ""
+    invalid?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+
+  const typed = (event: Event) => {
+    const value = (event.target as HTMLInputElement).value
+    $updateModel(value)
+    $emit("input", value)
+  }
+  const committed = (event: Event) => $emit("change", (event.target as HTMLInputElement).value)
+  const key = (event: KeyboardEvent) => {
+    if (event.key === "Enter") $emit("enter", (event.target as HTMLInputElement).value)
+  }
+</script>
+
+<span class="box" :class.invalid="flag(invalid)" :class.disabled="flag(disabled)">
+  <span :if="prefix" class="unit">{{ prefix }}</span>
+  <input class="input"
+         :class.end="align === 'end'"
+         :type="type"
+         :value="model ?? ''"
+         :placeholder="placeholder || null"
+         :inputmode="inputmode || null"
+         :autocomplete="autocomplete || null"
+         :maxlength="maxlength || null"
+         :required="flag(required)"
+         :disabled="flag(disabled)"
+         :aria-invalid="flag(invalid) ? 'true' : null"
+         @input="typed($event)"
+         @change="committed($event)"
+         @keydown="key($event)">
+  <span :if="suffix" class="unit">{{ suffix }}</span>
+</span>
+
+<style scoped>
+  .box {
+    display: flex;
+    align-items: center;
+    min-height: var(--vc-control-md);
+    border: var(--vc-border-width) solid var(--vc-border);
+    border-radius: var(--vc-radius-md);
+    background: var(--vc-field);
+    transition: border-color var(--vc-duration-fast) ease, box-shadow var(--vc-duration-fast) ease;
+  }
+  .box:hover { border-color: var(--vc-border-strong); }
+  .box:focus-within {
+    border-color: var(--vc-focus);
+    box-shadow: 0 0 0 3px var(--vc-focus-ring);
+  }
+  .invalid, .invalid:hover { border-color: var(--vc-bad); }
+  .invalid:focus-within { box-shadow: 0 0 0 3px var(--vc-bad-soft); border-color: var(--vc-bad); }
+  .disabled { background: var(--vc-field-off); }
+  .input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    min-height: calc(var(--vc-control-md) - 2px);
+    padding: 0 var(--vc-space-3);
+    border: 0;
+    background: transparent;
+    color: var(--vc-ink);
+    font-family: var(--vc-font-sans);
+    /* 16px at least: smaller makes iOS zoom in on focus. */
+    font-size: var(--vc-text-md);
+    font-variant-numeric: var(--vc-figures);
+    outline: none;
+  }
+  .input::placeholder { color: var(--vc-ink-subtle); }
+  .input:disabled { color: var(--vc-ink-subtle); }
+  .end { text-align: right; }
+  .unit {
+    flex: none;
+    padding: 0 var(--vc-space-3);
+    color: var(--vc-ink-muted);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-sm);
+  }
+  .unit:first-child { padding-right: 0; }
+  .input + .unit { padding-left: 0; }
+</style>
