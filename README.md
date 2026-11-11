@@ -177,9 +177,26 @@ Upload it in Settings: the `.p12` or `.pfx` file it was exported to, with its pa
 
 ## Layout
 
-- `crates/core`: domain logic without I/O (record hash, invoice totals, QR URL).
-- `crates/server`: Axum HTTP server, API, database access, migrations and security headers.
-- `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
+The code is organised by domain: the same five domains on the server and in the client, so a change to one of them stays in one folder on each side.
+
+| Domain | What it is | Server (`crates/server/src`) | Client (`web/src`) | Tests (`crates/server/tests`) |
+|---|---|---|---|---|
+| Access | Users, sign-in with a code or a passkey, sessions | `access/`: `users.rs`, `sessions.rs`, `passkeys.rs`, `api.rs` | `access/`: `SignIn.html`, `AccessSettings.html`, `webauthn.ts` | `access.rs` |
+| Company | Company data and numbering series | `company/`: `store.rs`, `api.rs` | `company/`: `CompanySettings.html` | `company_and_contacts.rs` |
+| Contacts | Customers and suppliers | `contacts/`: `store.rs`, `api.rs` | `contacts/`: `Contacts.html` | `company_and_contacts.rs` |
+| Invoices | Invoices, billing records, the hash chain, practice and live modes, quarter totals | `invoices/`: `store.rs`, `api.rs` | `invoices/`: `Invoices.html`; `home/Home.html` | `invoices.rs` |
+| AEAT | Sending records: SOAP client, queue, practice mock, certificate | `aeat/`: `client.rs`, `submission.rs`, `service.rs`, `certificate.rs`, `api.rs` | `aeat/`: `AeatSettings.html` | `aeat.rs`, `aeat_modes.rs`, `aeat_certificates.rs` |
+
+In each domain folder, `mod.rs` says what it holds and which tables it owns, `store.rs` (or the files named after their subject) holds data access and rules, and `api.rs` its HTTP routes. In the client, each domain folder has its `types.ts`, its `api.ts` (endpoints) and its screens.
+
+Shared by every domain:
+
+- Server: `api.rs` (the router that puts the domains' routes together, and `ApiError`), `error.rs` (`StoreError`), `events.rs` (event log), `config.rs`, `security.rs` (headers, CSP), `mail.rs` and `mail/es.rs` (emails and their texts), `lib.rs` (`AppState`), `main.rs` (commands and the submission loop), `migrations/`.
+- Client: `app/` (the shell `App.html`, `http.ts` with the one `request` to the API, `api.ts` putting every domain's endpoints together, `errors.ts`, `app.css`), `settings/Settings.html` (one section per domain), `i18n/es.ts` (every text of the interface), `theme/` (the design system).
+
+Other crates and files:
+
+- `crates/core`: domain logic without I/O, already one module per subject: `invoice` (totals, validation), `hash` (Veri*factu record hash), `qr` (QR URL), `aeat` (the AEAT's XML messages), `xml`.
 - `web/src/theme`: the design system: `tokens.css` (every colour, size, font and motion, light and dark) and components that import nothing and draw only with those tokens. Its demo is at `/design/` (`http://localhost:5173/design/` with `make up`).
 - `crates/aeat-mock`: mock of the AEAT record submission service, for tests, local development and practice mode.
 - `aeat/schemas`: official AEAT WSDL and XSD files.
