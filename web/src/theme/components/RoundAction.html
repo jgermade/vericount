@@ -1,0 +1,69 @@
+<script :setup="{ label = '', icon = '', variant = 'secondary', disabled = false }: RoundActionProps" lang="ts">
+  // A round button with its label underneath, in a row of the main things
+  // a screen lets you do: new invoice, new contact, send now. `icon` is an
+  // SVG path in a 24×24 box, drawn with a stroke. `primary` fills it with
+  // the accent. Emits `click`.
+  //
+  //   <RoundAction :label="t.list.newInvoice" :icon="ICONS.plus" variant="primary" @click="showNew()" />
+  //
+  // Part of the theme: imports nothing, draws only with tokens.
+  interface RoundActionProps {
+    label?: string
+    icon?: string
+    variant?: "primary" | "secondary"
+    disabled?: boolean | ""
+  }
+  const flag = (v: unknown) => v === "" || v === true || v === "true"
+  const click = (event: Event) => {
+    if (!flag(disabled)) $emit("click", event)
+  }
+</script>
+
+<button type="button" class="action" :class.primary="variant === 'primary'" :disabled="flag(disabled)" @click="click($event)">
+  <span class="circle" aria-hidden="true"><svg viewBox="0 0 24 24"><path :d="icon" /></svg></span>
+  <span class="label">{{ label }}</span>
+</button>
+
+<style scoped>
+  .action {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--vc-space-2);
+    min-width: 72px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--vc-fg);
+    font-family: var(--vc-font-sans);
+    font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
+    cursor: pointer;
+  }
+  .circle {
+    display: grid;
+    place-items: center;
+    width: var(--vc-control-md);
+    height: var(--vc-control-md);
+    border-radius: 50%;
+    background: var(--vc-surface);
+    color: var(--vc-fg);
+    transition: background var(--vc-duration-fast) ease, transform var(--vc-duration-fast) ease;
+  }
+  .action:hover:not(:disabled) .circle { background: var(--vc-active); }
+  .action:active:not(:disabled) .circle { transform: scale(.94); }
+  .action:focus-visible { outline: none; }
+  .action:focus-visible .circle { box-shadow: 0 0 0 3px var(--vc-focus-ring); }
+  .primary .circle { background: var(--vc-accent); color: var(--vc-on-accent); }
+  .primary:hover:not(:disabled) .circle { background: var(--vc-accent-hover); }
+  .action:disabled { cursor: default; opacity: .45; }
+  svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+</style>

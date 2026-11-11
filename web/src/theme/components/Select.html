@@ -50,7 +50,7 @@
     border: var(--vc-border-width) solid var(--vc-border);
     border-radius: var(--vc-radius-md);
     background: var(--vc-field);
-    color: var(--vc-ink);
+    color: var(--vc-fg);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-md);
     appearance: none;
@@ -63,7 +63,7 @@
     box-shadow: 0 0 0 3px var(--vc-focus-ring);
     outline: none;
   }
-  .select:disabled { background: var(--vc-field-off); color: var(--vc-ink-subtle); cursor: default; }
+  .select:disabled { background: var(--vc-field-off); color: var(--vc-fg-subtle); cursor: default; }
   .invalid .select { border-color: var(--vc-bad); }
   .caret {
     position: absolute;
@@ -73,7 +73,7 @@
     height: 12px;
     margin-top: -6px;
     fill: none;
-    stroke: var(--vc-ink-muted);
+    stroke: var(--vc-fg-muted);
     stroke-width: 1.8;
     pointer-events: none;
   }

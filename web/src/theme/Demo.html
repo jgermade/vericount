@@ -9,7 +9,7 @@
   // English; the sample data is Spanish, as the app's is.
   const [
     Alert, Amount, Badge, Button, Card, Chain, Checkbox, Confirm, Entry, Field,
-    FileInput, Hash, Segmented, Select, Spinner, Stamp, TabBar, TextInput, Tile,
+    FileInput, Hash, RoundAction, Segmented, Select, Spinner, TabBar, TextInput, Tile,
   ] = await Promise.all([
     import("./components/Alert.html"),
     import("./components/Amount.html"),
@@ -23,10 +23,10 @@
     import("./components/Field.html"),
     import("./components/FileInput.html"),
     import("./components/Hash.html"),
+    import("./components/RoundAction.html"),
     import("./components/Segmented.html"),
     import("./components/Select.html"),
     import("./components/Spinner.html"),
-    import("./components/Stamp.html"),
     import("./components/TabBar.html"),
     import("./components/TextInput.html"),
     import("./components/Tile.html"),
@@ -154,7 +154,7 @@
   <img class="logo" src="/logo.svg" alt="">
   <div class="titles">
     <h1>vericount <span class="thin">· design system</span></h1>
-    <p>The ledger: warm paper, ink in the logo's blue, hairline rules, figures that line up, and stamps.</p>
+    <p>A money app, not a document: white cards on grey, round corners, pill controls, one vivid accent, big bold figures.</p>
   </div>
   <Segmented :model="theme" :options="THEMES" label="Tone of the page" />
 </header>
@@ -170,7 +170,7 @@
 
   <section id="colours" class="section">
     <h2>Colours</h2>
-    <p class="lead">By role, never by hue: <code>--vc-paper</code>, not "beige". Every one is redefined for the dark tone, and any element can be an island of the other tone with <code>data-tone</code>.</p>
+    <p class="lead">By role, never by hue: <code>--vc-bg</code>, not "beige". Every one is redefined for the dark tone, and any element can be an island of the other tone with <code>data-tone</code>.</p>
     <div :each="group in COLOURS" class="swatches">
       <h3>{{ group[0] }}</h3>
       <div class="swatch-grid">
@@ -243,13 +243,6 @@
       <Badge>inactiva</Badge>
     </div>
 
-    <h3>Stamp</h3>
-    <div class="row stamps">
-      <Stamp>Anulada</Stamp>
-      <Stamp tone="warn">Factura de prueba</Stamp>
-      <Stamp tone="ok" size="lg">Verificada</Stamp>
-      <Stamp tone="accent" size="sm" flat>Veri*factu</Stamp>
-    </div>
 
     <h3>Alert</h3>
     <div class="stack">
@@ -295,8 +288,8 @@
       <Hash hash="" empty="primer registro" />
     </div>
 
-    <h3>Entry, in a ruled card</h3>
-    <Card ruled :padded="false">
+    <h3>Entry, in a card</h3>
+    <Card :padded="false">
       <div class="entries">
         <Entry :each="item in INVOICES" :key="item.id" :title="item.number" :subtitle="item.date + ' · ' + item.customer"
                interactive @click="opened = item.id">
@@ -382,7 +375,7 @@
             <Tile label="Facturado"><Amount amount="16129.30" /></Tile>
             <Tile label="IVA"><Amount amount="3194.10" /></Tile>
           </div>
-          <Card ruled :padded="false">
+          <Card :padded="false">
             <div class="entries">
               <Entry :each="item in INVOICES" :key="item.id" :title="item.number" :subtitle="item.customer" interactive>
                 <template :slot.tags><Badge :tone="STATE[item.state].tone" dot>{{ STATE[item.state].label }}</Badge></template>
@@ -398,9 +391,9 @@
         <div class="phone-body">
           <div class="screen-head">
             <h3 class="screen-title">Factura A2026-0001</h3>
-            <Stamp size="sm">Anulada</Stamp>
+            <Badge tone="bad">anulada</Badge>
           </div>
-          <Card ruled>
+          <Card>
             <dl class="pairs">
               <dt>Cliente</dt><dd>Construcciones Ría SL<br><span class="muted">B70000004</span></dd>
               <dt>Fecha</dt><dd>02/11/2026</dd>
@@ -441,19 +434,19 @@
     align-items: center;
     gap: var(--vc-space-4);
     padding: var(--vc-space-6) var(--vc-space-5);
-    border-bottom: var(--vc-border-width) solid var(--vc-rule);
+    border-bottom: var(--vc-border-width) solid var(--vc-line);
     background: var(--vc-surface);
   }
   .logo { width: 48px; height: 48px; }
   .titles { flex: 1; min-width: 14rem; }
   h1 {
     margin: 0;
-    font-family: var(--vc-font-serif);
+    font-family: var(--vc-font-display);
     font-size: var(--vc-text-2xl);
     line-height: var(--vc-leading-tight);
   }
-  .thin { color: var(--vc-ink-muted); font-weight: var(--vc-weight-regular); }
-  .titles p { margin: var(--vc-space-1) 0 0; color: var(--vc-ink-muted); font-size: var(--vc-text-sm); }
+  .thin { color: var(--vc-fg-muted); font-weight: var(--vc-weight-regular); }
+  .titles p { margin: var(--vc-space-1) 0 0; color: var(--vc-fg-muted); font-size: var(--vc-text-sm); }
 
   .page {
     max-width: 68rem;
@@ -468,34 +461,34 @@
     gap: var(--vc-space-4);
     overflow-x: auto;
     padding: var(--vc-space-3) 0;
-    border-bottom: var(--vc-border-width) solid var(--vc-rule);
-    background: var(--vc-paper);
+    border-bottom: var(--vc-border-width) solid var(--vc-line);
+    background: var(--vc-bg);
     font-size: var(--vc-text-sm);
   }
-  .index a { color: var(--vc-ink-muted); text-decoration: none; white-space: nowrap; }
+  .index a { color: var(--vc-fg-muted); text-decoration: none; white-space: nowrap; }
   .index a:hover { color: var(--vc-accent); }
 
   .section { padding-top: var(--vc-space-7); scroll-margin-top: var(--vc-space-8); }
   h2 {
     margin: 0 0 var(--vc-space-2);
     padding-bottom: var(--vc-space-2);
-    border-bottom: 2px solid var(--vc-ink);
-    font-family: var(--vc-font-serif);
+    border-bottom: 2px solid var(--vc-fg);
+    font-family: var(--vc-font-display);
     font-size: var(--vc-text-xl);
   }
   h3 {
     margin: var(--vc-space-6) 0 var(--vc-space-3);
-    color: var(--vc-ink-muted);
+    color: var(--vc-fg-muted);
     font-size: var(--vc-text-xs);
     font-weight: var(--vc-weight-bold);
-    letter-spacing: var(--vc-tracking-caps);
+    letter-spacing: 0;
     text-transform: uppercase;
   }
-  .lead { max-width: 44rem; margin: 0; color: var(--vc-ink-muted); }
+  .lead { max-width: 44rem; margin: 0; color: var(--vc-fg-muted); }
   code { font-family: var(--vc-font-mono); font-size: .9em; }
-  .muted { color: var(--vc-ink-muted); font-size: var(--vc-text-sm); }
+  .muted { color: var(--vc-fg-muted); font-size: var(--vc-text-sm); }
   .bound {
-    color: var(--vc-ink-subtle);
+    color: var(--vc-fg-subtle);
     font-family: var(--vc-font-mono);
     font-size: var(--vc-text-xs);
   }
@@ -513,18 +506,18 @@
   .swatch-card {
     margin: 0;
     overflow: hidden;
-    border: var(--vc-border-width) solid var(--vc-rule);
+    border: var(--vc-border-width) solid var(--vc-line);
     border-radius: var(--vc-radius-sm);
     background: var(--vc-surface);
   }
-  .swatch { display: block; height: 3.5rem; border-bottom: var(--vc-border-width) solid var(--vc-rule); }
+  .swatch { display: block; height: 3.5rem; border-bottom: var(--vc-border-width) solid var(--vc-line); }
   .swatch-card figcaption {
     display: flex;
     flex-direction: column;
     padding: var(--vc-space-2);
     font-size: var(--vc-text-xs);
   }
-  .swatch-card figcaption span { color: var(--vc-ink-muted); font-family: var(--vc-font-mono); }
+  .swatch-card figcaption span { color: var(--vc-fg-muted); font-family: var(--vc-font-mono); }
   .island {
     display: flex;
     flex-wrap: wrap;
@@ -533,20 +526,20 @@
     margin-top: var(--vc-space-5);
     padding: var(--vc-space-4);
     border-radius: var(--vc-radius-md);
-    background: var(--vc-paper);
-    color: var(--vc-ink);
+    background: var(--vc-bg);
+    color: var(--vc-fg);
   }
 
   .type-samples p { margin: var(--vc-space-2) 0; }
-  .serif-xl { font-family: var(--vc-font-serif); font-size: var(--vc-text-3xl); font-weight: var(--vc-weight-bold); line-height: var(--vc-leading-tight); }
+  .serif-xl { font-family: var(--vc-font-display); font-size: var(--vc-text-3xl); font-weight: var(--vc-weight-bold); line-height: var(--vc-leading-tight); }
   .sans-md { font-size: var(--vc-text-md); }
-  .mono-sm { color: var(--vc-ink-muted); font-family: var(--vc-font-mono); font-size: var(--vc-text-sm); }
+  .mono-sm { color: var(--vc-fg-muted); font-family: var(--vc-font-mono); font-size: var(--vc-text-sm); }
   .figures {
     display: inline-flex;
     flex-direction: column;
     align-items: flex-end;
     padding: var(--vc-space-3) var(--vc-space-4);
-    border-left: 3px double var(--vc-margin);
+    border-radius: var(--vc-radius-md);
     background: var(--vc-surface);
   }
   .figures-xl { margin-top: var(--vc-space-4); }
@@ -557,9 +550,9 @@
     place-items: center;
     width: 7rem;
     height: 4.5rem;
-    border: var(--vc-border-width) solid var(--vc-rule);
+    border: var(--vc-border-width) solid var(--vc-line);
     background: var(--vc-surface);
-    color: var(--vc-ink-muted);
+    color: var(--vc-fg-muted);
     font-family: var(--vc-font-mono);
     font-size: var(--vc-text-xs);
   }
@@ -586,10 +579,10 @@
     max-width: 24rem;
     margin-top: var(--vc-space-4);
     overflow: hidden;
-    border: var(--vc-border-width) solid var(--vc-rule);
+    border: var(--vc-border-width) solid var(--vc-line);
     border-radius: var(--vc-radius-lg);
     padding-top: var(--vc-space-4);
-    background: var(--vc-paper);
+    background: var(--vc-bg);
   }
 
   .phones {
@@ -603,9 +596,9 @@
     flex-direction: column;
     overflow: hidden;
     max-width: 24rem;
-    border: 8px solid var(--vc-ink);
+    border: 8px solid var(--vc-fg);
     border-radius: 28px;
-    background: var(--vc-paper);
+    background: var(--vc-bg);
     box-shadow: var(--vc-shadow-lg);
   }
   .phone-body {
@@ -618,8 +611,8 @@
   .screen-head { display: flex; align-items: center; justify-content: space-between; gap: var(--vc-space-3); }
   .screen-title {
     margin: 0;
-    color: var(--vc-ink);
-    font-family: var(--vc-font-serif);
+    color: var(--vc-fg);
+    font-family: var(--vc-font-display);
     font-size: var(--vc-text-xl);
     font-weight: var(--vc-weight-bold);
     letter-spacing: 0;
@@ -632,8 +625,8 @@
     margin: 0;
     font-size: var(--vc-text-sm);
   }
-  .pairs dt { color: var(--vc-ink-muted); }
+  .pairs dt { color: var(--vc-fg-muted); }
   .pairs dd { margin: 0; }
   .num { text-align: right; }
-  .total { padding-top: var(--vc-space-2); border-top: 2px solid var(--vc-ink); color: var(--vc-ink); font-weight: var(--vc-weight-bold); }
+  .total { padding-top: var(--vc-space-2); border-top: 2px solid var(--vc-fg); color: var(--vc-fg); font-weight: var(--vc-weight-bold); }
 </style>

@@ -41,18 +41,18 @@
     border: 0;
     border-radius: calc(var(--vc-radius-md) - 2px);
     background: transparent;
-    color: var(--vc-ink-muted);
+    color: var(--vc-fg-muted);
     font-family: inherit;
     font-size: var(--vc-text-sm);
     font-weight: var(--vc-weight-medium);
     cursor: pointer;
     transition: background var(--vc-duration-fast) ease, color var(--vc-duration-fast) ease;
   }
-  .segment:hover:not(.on) { color: var(--vc-ink); }
+  .segment:hover:not(.on) { color: var(--vc-fg); }
   .segment:focus-visible { outline: 2px solid var(--vc-focus); outline-offset: 1px; }
   .on {
     background: var(--vc-surface);
-    color: var(--vc-ink);
-    box-shadow: var(--vc-shadow-sm), 0 0 0 1px var(--vc-rule);
+    color: var(--vc-fg);
+    box-shadow: var(--vc-shadow-sm), 0 0 0 1px var(--vc-line);
   }
 </style>

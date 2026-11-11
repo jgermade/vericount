@@ -1,21 +1,23 @@
-<script :setup="{ title = '', subtitle = '', interactive = false }: EntryProps" lang="ts">
-  // One line of a ledger: an invoice, a contact, a series. Title and a
-  // subtitle on the left, badges after the title in the `tags` slot, and
-  // the figure on the right in the `aside` slot, aligned with the figures
-  // of the lines above and below. Lines are ruled by hairlines.
+<script :setup="{ title = '', subtitle = '', initials = '', tone = 'neutral', interactive = false }: EntryProps" lang="ts">
+  // A row of a list: an invoice, a contact, a series. A round avatar on the
+  // left (`initials`, or an icon in the `icon` slot), title and subtitle,
+  // badges after the title in the `tags` slot, and the figure on the right
+  // in the `aside` slot. `tone` colours the avatar.
   //
-  //   <Entry :title="item.series_number" :subtitle="item.recipient_name" interactive
-  //          @click="open(item.id)">
+  //   <Entry :title="item.recipient_name" :subtitle="item.series_number"
+  //          :initials="initialsOf(item.recipient_name)" interactive @click="open(item.id)">
   //     <template :slot.tags><Badge tone="ok" dot>…</Badge></template>
-  //     <template :slot.aside><Amount :value="item.total_amount" /></template>
+  //     <template :slot.aside><Amount :amount="item.total_amount" /></template>
   //   </Entry>
   //
-  // `interactive` makes the whole line a button that emits `click`. Put
-  // entries in a plain `<ul>`/`<div>`: each draws its own rule. Part of the
-  // theme: imports nothing, draws only with tokens.
+  // `interactive` makes the whole row a button that emits `click`. Put
+  // entries in a Card with `padded="false"`. Part of the theme: imports
+  // nothing, draws only with tokens.
   interface EntryProps {
     title?: string
     subtitle?: string
+    initials?: string
+    tone?: "neutral" | "accent" | "ok" | "warn" | "bad"
     interactive?: boolean | ""
   }
   const flag = (v: unknown) => v === "" || v === true || v === "true"
@@ -26,17 +28,22 @@
 </script>
 
 <button :if="isInteractive" type="button" class="entry interactive" @click="click($event)">
+  <span :if="initials || $slots.icon" class="avatar" :class="'tone-' + tone" aria-hidden="true">
+    <slot.icon>{{ initials }}</slot.icon>
+  </span>
   <span class="main">
-    <span class="title-line"><strong class="title">{{ title }}</strong><slot.tags /></span>
+    <span class="title-line"><span class="title">{{ title }}</span><slot.tags /></span>
     <span :if="subtitle" class="subtitle">{{ subtitle }}</span>
     <slot></slot>
   </span>
   <span :if="$slots.aside" class="aside"><slot.aside /></span>
-  <svg class="chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
 </button>
 <div :else class="entry">
+  <span :if="initials || $slots.icon" class="avatar" :class="'tone-' + tone" aria-hidden="true">
+    <slot.icon>{{ initials }}</slot.icon>
+  </span>
   <span class="main">
-    <span class="title-line"><strong class="title">{{ title }}</strong><slot.tags /></span>
+    <span class="title-line"><span class="title">{{ title }}</span><slot.tags /></span>
     <span :if="subtitle" class="subtitle">{{ subtitle }}</span>
     <slot></slot>
   </span>
@@ -49,19 +56,17 @@
     align-items: center;
     gap: var(--vc-space-3);
     width: 100%;
-    min-height: var(--vc-control-lg);
-    padding: var(--vc-space-3) 0;
+    min-height: 64px;
+    margin: 0;
+    padding: var(--vc-space-3) var(--vc-space-5);
     border: 0;
-    border-bottom: var(--vc-border-width) solid var(--vc-rule);
     background: transparent;
-    color: var(--vc-ink);
+    color: var(--vc-fg);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-md);
     text-align: left;
   }
   .interactive {
-    margin: 0;
-    padding-inline: var(--vc-space-2);
     cursor: pointer;
     transition: background var(--vc-duration-fast) ease;
   }
@@ -71,6 +76,25 @@
     outline: 2px solid var(--vc-focus);
     outline-offset: -2px;
   }
+  .avatar {
+    --ink: var(--vc-fg);
+    --ground: var(--vc-sunken);
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: var(--vc-avatar);
+    height: var(--vc-avatar);
+    border-radius: 50%;
+    background: var(--ground);
+    color: var(--ink);
+    font-size: var(--vc-text-sm);
+    font-weight: var(--vc-weight-bold);
+    text-transform: uppercase;
+  }
+  .tone-accent { --ink: var(--vc-accent); --ground: var(--vc-accent-soft); }
+  .tone-ok { --ink: var(--vc-ok); --ground: var(--vc-ok-soft); }
+  .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
+  .tone-bad { --ink: var(--vc-bad); --ground: var(--vc-bad-soft); }
   .main {
     display: flex;
     flex: 1;
@@ -85,12 +109,14 @@
     gap: var(--vc-space-2);
   }
   .title {
+    overflow: hidden;
     font-weight: var(--vc-weight-bold);
-    font-variant-numeric: var(--vc-figures);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .subtitle {
     overflow: hidden;
-    color: var(--vc-ink-muted);
+    color: var(--vc-fg-muted);
     font-size: var(--vc-text-sm);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -98,14 +124,7 @@
   .aside {
     flex: none;
     font-variant-numeric: var(--vc-figures);
+    font-weight: var(--vc-weight-bold);
     text-align: right;
-  }
-  .chevron {
-    flex: none;
-    width: 14px;
-    height: 14px;
-    fill: none;
-    stroke: var(--vc-ink-subtle);
-    stroke-width: 1.6;
   }
 </style>

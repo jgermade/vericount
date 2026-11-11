@@ -1,11 +1,10 @@
 <script :setup="{ tone = 'accent', title = '' }: AlertProps" lang="ts">
-  // A message about the view around it. `tone` is how much it matters:
-  // `accent` to say something, `ok` that something went well, `warn` that
-  // something needs attention (practice mode, pending records), `bad` that
-  // something failed. A rule down its left edge, like a note in a margin.
+  // A message about the view around it, as a soft card. `tone` is how much
+  // it matters: `accent` to say something, `ok` that something went well,
+  // `warn` that something needs attention (practice mode, pending
+  // records), `bad` that something failed.
   //
-  //   <Alert tone="warn">{{ t.list.practice }}</Alert>
-  //   <Alert tone="bad" :title="t.list.chainBrokenTitle">…</Alert>
+  //   <Alert tone="warn" :title="t.list.practiceTitle">{{ t.list.practice }}</Alert>
   //
   // `bad` is announced as an alert, the rest as a status. Part of the theme:
   // imports nothing, draws only with tokens.
@@ -16,19 +15,28 @@
 </script>
 
 <div class="alert" :class="'tone-' + tone" :role="tone === 'bad' ? 'alert' : 'status'">
-  <strong :if="title" class="title">{{ title }}</strong>
-  <div class="body"><slot></slot></div>
+  <span class="mark" aria-hidden="true">
+    <svg :if="tone === 'ok'" viewBox="0 0 20 20"><path d="M6 10.5l2.5 2.5 5.5-6" /></svg>
+    <svg :elseif="tone === 'accent'" viewBox="0 0 20 20"><path d="M10 9v5 M10 6v.5" /></svg>
+    <svg :else viewBox="0 0 20 20"><path d="M10 5.5v5.5 M10 14v.5" /></svg>
+  </span>
+  <div class="text">
+    <strong :if="title" class="title">{{ title }}</strong>
+    <div class="body"><slot></slot></div>
+  </div>
 </div>
 
 <style scoped>
   .alert {
     --ink: var(--vc-accent);
     --ground: var(--vc-accent-soft);
-    padding: var(--vc-space-3) var(--vc-space-4);
-    border-left: 3px solid var(--ink);
-    border-radius: 0 var(--vc-radius-md) var(--vc-radius-md) 0;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--vc-space-3);
+    padding: var(--vc-space-4);
+    border-radius: var(--vc-radius-md);
     background: var(--ground);
-    color: var(--vc-ink);
+    color: var(--vc-fg);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-sm);
     line-height: var(--vc-leading);
@@ -36,10 +44,28 @@
   .tone-ok { --ink: var(--vc-ok); --ground: var(--vc-ok-soft); }
   .tone-warn { --ink: var(--vc-warn); --ground: var(--vc-warn-soft); }
   .tone-bad { --ink: var(--vc-bad); --ground: var(--vc-bad-soft); }
+  .mark {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--ink);
+  }
+  .mark svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: var(--vc-surface);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .text { min-width: 0; padding-top: 2px; }
   .title {
     display: block;
     margin-bottom: 2px;
-    color: var(--ink);
     font-weight: var(--vc-weight-bold);
   }
 </style>

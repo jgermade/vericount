@@ -1,8 +1,8 @@
 <script :setup="{ label = '', hint = '', tone = 'neutral' }: TileProps" lang="ts">
   // One figure with what it is: invoiced this quarter, VAT, invoices issued.
   // The figure goes in the slot (an Amount, or a plain number); `hint` is a
-  // line under it. `tone` colours the rule on top, to point at a figure that
-  // needs attention.
+  // line under it. `tone` colours the hint, to point at a figure that needs
+  // attention.
   //
   //   <Tile :label="t.home.invoiced"><Amount :amount="summary.total_base" /></Tile>
   //
@@ -22,39 +22,36 @@
 
 <style scoped>
   .tile {
-    --rule: var(--vc-ink);
+    --hint: var(--vc-fg-muted);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--vc-space-1);
     min-width: 0;
-    padding: var(--vc-space-3) var(--vc-space-4) var(--vc-space-4);
-    border-top: 2px solid var(--rule);
+    padding: var(--vc-space-4);
+    border-radius: var(--vc-radius-md);
     background: var(--vc-surface);
-    box-shadow: var(--vc-shadow-sm);
     font-family: var(--vc-font-sans);
   }
-  .tone-accent { --rule: var(--vc-accent); }
-  .tone-ok { --rule: var(--vc-ok); }
-  .tone-warn { --rule: var(--vc-warn); }
-  .tone-bad { --rule: var(--vc-bad); }
-  /* An overline, like a column head in a ledger. */
+  .tone-accent { --hint: var(--vc-accent); }
+  .tone-ok { --hint: var(--vc-ok); }
+  .tone-warn { --hint: var(--vc-warn); }
+  .tone-bad { --hint: var(--vc-bad); }
   .label {
-    color: var(--vc-ink-muted);
-    font-size: var(--vc-text-xs);
-    font-weight: var(--vc-weight-medium);
-    letter-spacing: var(--vc-tracking-caps);
-    text-transform: uppercase;
+    color: var(--vc-fg-muted);
+    font-size: var(--vc-text-sm);
   }
   .figure {
-    color: var(--vc-ink);
-    font-family: var(--vc-font-serif);
+    color: var(--vc-fg);
+    font-family: var(--vc-font-display);
     font-size: var(--vc-text-xl);
     font-variant-numeric: var(--vc-figures);
     font-weight: var(--vc-weight-bold);
+    letter-spacing: var(--vc-tracking-display);
     line-height: var(--vc-leading-tight);
   }
   .hint {
-    color: var(--vc-ink-muted);
+    color: var(--hint);
     font-size: var(--vc-text-xs);
+    font-weight: var(--vc-weight-medium);
   }
 </style>

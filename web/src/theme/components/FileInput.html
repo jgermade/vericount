@@ -62,8 +62,8 @@
     padding: var(--vc-space-3) var(--vc-space-4);
     border: 1.5px dashed var(--vc-border-strong);
     border-radius: var(--vc-radius-md);
-    background: var(--vc-paper);
-    color: var(--vc-ink-muted);
+    background: var(--vc-bg);
+    color: var(--vc-fg-muted);
     font-family: var(--vc-font-sans);
     font-size: var(--vc-text-sm);
     cursor: pointer;
@@ -77,7 +77,7 @@
     border-style: solid;
     border-color: var(--vc-ok);
     background: var(--vc-ok-soft);
-    color: var(--vc-ink);
+    color: var(--vc-fg);
   }
   .disabled { opacity: .5; cursor: default; }
   .native {
@@ -100,7 +100,7 @@
   .text { display: flex; flex-direction: column; min-width: 0; }
   .name {
     overflow: hidden;
-    color: var(--vc-ink);
+    color: var(--vc-fg);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
