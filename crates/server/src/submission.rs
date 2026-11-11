@@ -15,6 +15,7 @@ use vericounts_core::aeat::{
 
 use crate::{
     aeat_client::{AeatClient, SubmitError},
+    certificate::CertificateInfo,
     config::Issuer,
     store::{self, StoreError},
 };
@@ -29,6 +30,8 @@ pub enum RecordState {
     /// Registered by the AEAT, but with errors to correct.
     AcceptedWithErrors,
     Rejected,
+    /// Rejected, and replaced by a later record of the same invoice.
+    Superseded,
 }
 
 impl RecordState {
@@ -51,9 +54,14 @@ impl RecordState {
             Self::Rejected => 3,
             Self::Pending => 2,
             Self::AcceptedWithErrors => 1,
-            Self::Accepted => 0,
+            Self::Accepted | Self::Superseded => 0,
         };
-        states.into_iter().max_by_key(rank).unwrap_or(Self::Pending)
+        // A superseded record says nothing about the invoice any more.
+        states
+            .into_iter()
+            .filter(|state| *state != Self::Superseded)
+            .max_by_key(rank)
+            .unwrap_or(Self::Pending)
     }
 }
 
@@ -65,12 +73,16 @@ pub struct RecordResult {
     pub error_description: Option<String>,
 }
 
-/// Latest result of every record that has one.
-pub async fn record_results(
+/// State of every record of an issuer, keyed by record id.
+///
+/// The state is the latest result the AEAT gave for the record, or
+/// pending when there is none. A rejected record that a later record of
+/// the same invoice and type replaces is superseded.
+pub async fn record_states(
     pool: &PgPool,
     issuer_nif: &str,
 ) -> Result<HashMap<i64, RecordResult>, StoreError> {
-    let rows: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+    let results: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT DISTINCT ON (r.record_id) r.record_id, r.status, r.error_code, r.error_description
          FROM aeat_record_results r JOIN aeat_submissions s ON s.id = r.submission_id
          WHERE s.issuer_nif = $1
@@ -79,25 +91,60 @@ pub async fn record_results(
     .bind(issuer_nif)
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(record_id, status, error_code, error_description)| {
+    let records: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT id, invoice_id, record_type FROM billing_records
+         WHERE issuer_nif = $1 ORDER BY id",
+    )
+    .bind(issuer_nif)
+    .fetch_all(pool)
+    .await?;
+
+    let mut states: HashMap<i64, RecordResult> = records
+        .iter()
+        .map(|(id, ..)| {
             (
-                record_id,
+                *id,
                 RecordResult {
-                    state: RecordState::from_db(&status),
-                    error_code,
-                    error_description,
+                    state: RecordState::Pending,
+                    error_code: None,
+                    error_description: None,
                 },
             )
         })
-        .collect())
+        .collect();
+    for (record_id, status, error_code, error_description) in results {
+        states.insert(
+            record_id,
+            RecordResult {
+                state: RecordState::from_db(&status),
+                error_code,
+                error_description,
+            },
+        );
+    }
+    for (index, (id, invoice_id, record_type)) in records.iter().enumerate() {
+        let replaced = records[index + 1..]
+            .iter()
+            .any(|(_, later_invoice, later_type)| {
+                later_invoice == invoice_id && later_type == record_type
+            });
+        if let Some(result) = states.get_mut(id) {
+            if result.state == RecordState::Rejected && replaced {
+                result.state = RecordState::Superseded;
+            }
+        }
+    }
+    Ok(states)
 }
 
 /// Everything needed to send records.
 pub struct Submitter {
     pub client: AeatClient,
     pub system: SoftwareSystem,
+    /// Who submits on behalf of the issuer, when declared.
+    pub representative: Option<Party>,
+    /// The client certificate in use, when there is one.
+    pub certificate: Option<CertificateInfo>,
     /// Only one submission runs at a time in this process.
     lock: Mutex<()>,
 }
@@ -107,6 +154,8 @@ impl Submitter {
         Self {
             client,
             system,
+            representative: None,
+            certificate: None,
             lock: Mutex::new(()),
         }
     }
@@ -168,19 +217,21 @@ pub async fn run_once(
     let _guard = submitter.lock.lock().await;
 
     let records = store::chain_records(pool, &issuer.nif).await?;
-    let results = record_results(pool, &issuer.nif).await?;
-    let state = |id: &i64| results.get(id).map_or(RecordState::Pending, |r| r.state);
+    let states = record_states(pool, &issuer.nif).await?;
+    let state = |id: &i64| states.get(id).map_or(RecordState::Pending, |r| r.state);
 
-    let Some(first) = records.iter().position(|(id, _)| !state(id).registered()) else {
+    // Records that still have to reach the AEAT, in chain order.
+    let mut waiting = records
+        .iter()
+        .filter(|(id, _)| !state(id).registered() && state(id) != RecordState::Superseded);
+    let Some(first) = waiting.next() else {
         return Ok(RunOutcome::NothingPending);
     };
-    if state(&records[first].0) == RecordState::Rejected {
-        return Ok(RunOutcome::Blocked {
-            record_id: records[first].0,
-        });
+    if state(&first.0) == RecordState::Rejected {
+        return Ok(RunOutcome::Blocked { record_id: first.0 });
     }
-    let batch: Vec<&(i64, Record)> = records[first..]
-        .iter()
+    let batch: Vec<&(i64, Record)> = std::iter::once(first)
+        .chain(waiting)
         .take_while(|(id, _)| state(id) == RecordState::Pending)
         .take(MAX_RECORDS_PER_REQUEST)
         .collect();
@@ -190,6 +241,7 @@ pub async fn run_once(
             name: issuer.name.clone(),
             nif: issuer.nif.clone(),
         },
+        submitter.representative.as_ref(),
         &submitter.system,
         &batch_records,
     );
@@ -320,23 +372,20 @@ pub struct QueueStatus {
     /// Outcome and error of the most recent attempt.
     pub last_outcome: Option<String>,
     pub last_error: Option<String>,
+    pub certificate: Option<CertificateInfo>,
+    /// Whether the certificate acts for the company itself. When it does
+    /// not, the company must have empowered its holder at the AEAT.
+    pub certificate_matches_company: Option<bool>,
+    pub representative_nif: Option<String>,
 }
 
 pub async fn queue_status(
     pool: &PgPool,
     issuer_nif: &str,
-    enabled: bool,
+    submitter: Option<&Submitter>,
 ) -> Result<QueueStatus, StoreError> {
-    let results = record_results(pool, issuer_nif).await?;
-    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM billing_records WHERE issuer_nif = $1")
-        .bind(issuer_nif)
-        .fetch_all(pool)
-        .await?;
-    let count = |wanted: RecordState| {
-        ids.iter()
-            .filter(|id| results.get(id).map_or(RecordState::Pending, |r| r.state) == wanted)
-            .count()
-    };
+    let states = record_states(pool, issuer_nif).await?;
+    let count = |wanted: RecordState| states.values().filter(|r| r.state == wanted).count();
     let last: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT r.outcome, r.error FROM aeat_responses r
          JOIN aeat_submissions s ON s.id = r.submission_id
@@ -345,12 +394,20 @@ pub async fn queue_status(
     .bind(issuer_nif)
     .fetch_optional(pool)
     .await?;
+    let certificate = submitter.and_then(|s| s.certificate.clone());
     Ok(QueueStatus {
-        enabled,
+        enabled: submitter.is_some(),
         pending: count(RecordState::Pending),
         rejected: count(RecordState::Rejected),
         accepted_with_errors: count(RecordState::AcceptedWithErrors),
         last_outcome: last.as_ref().map(|(outcome, _)| outcome.clone()),
         last_error: last.and_then(|(_, error)| error),
+        certificate_matches_company: certificate
+            .as_ref()
+            .map(|c| c.nif.as_deref() == Some(issuer_nif)),
+        certificate,
+        representative_nif: submitter
+            .and_then(|s| s.representative.as_ref())
+            .map(|party| party.nif.clone()),
     })
 }

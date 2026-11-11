@@ -5,7 +5,7 @@ use tokio::net::TcpListener;
 use vericounts_core::aeat::{Party, SoftwareSystem};
 use vericounts_server::{
     aeat_client::AeatClient,
-    auth,
+    auth, certificate,
     config::{self, Config, Startup},
     directory,
     store::StoreError,
@@ -73,7 +73,7 @@ fn submitter(config: &Config) -> Result<Option<Arc<Submitter>>, AnyError> {
         .transpose()?;
     let client = AeatClient::new(settings.endpoint.clone(), identity.as_deref())?;
     println!("sending records to {}", settings.endpoint);
-    Ok(Some(Arc::new(Submitter::new(
+    let mut submitter = Submitter::new(
         client,
         SoftwareSystem {
             producer: Party {
@@ -85,7 +85,21 @@ fn submitter(config: &Config) -> Result<Option<Arc<Submitter>>, AnyError> {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             installation_number: settings.installation_number,
         },
-    ))))
+    );
+    submitter.representative = settings
+        .representative
+        .map(|(name, nif)| Party { name, nif });
+    if let Some(identity) = &identity {
+        let info = certificate::inspect(identity)?;
+        println!(
+            "client certificate: {} (NIF {}), expires {}",
+            info.subject,
+            info.nif.as_deref().unwrap_or("unknown"),
+            info.expires_at
+        );
+        submitter.certificate = Some(info);
+    }
+    Ok(Some(Arc::new(submitter)))
 }
 
 /// Sends pending records forever, waiting between requests for as long

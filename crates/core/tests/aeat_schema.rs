@@ -10,7 +10,7 @@ use std::{
 
 use chrono::NaiveDate;
 use vericounts_core::{
-    aeat::{self, Party, Record, Registration, SoftwareSystem},
+    aeat::{self, Party, PreviousRejection, Record, Registration, SoftwareSystem},
     invoice::TaxBreakdown,
 };
 
@@ -66,6 +66,7 @@ fn registration() -> Registration {
         invoice_type: "F1".to_owned(),
         description: "Consulting & <services>".to_owned(),
         recipient: party("Customer SA", "A58818501"),
+        correction: None,
         taxes: vec![TaxBreakdown {
             vat_rate: "21".parse().unwrap(),
             base_amount: "100".parse().unwrap(),
@@ -100,6 +101,7 @@ fn request_is_valid_against_the_official_schema() {
         issuer_nif: first.issuer.nif.clone(),
         series_number: first.series_number.clone(),
         issue_date: first.issue_date,
+        previous_rejection: true,
         previous: Some(aeat::PreviousRecord {
             issuer_nif: first.issuer.nif.clone(),
             series_number: first.series_number.clone(),
@@ -110,20 +112,38 @@ fn request_is_valid_against_the_official_schema() {
         hash: "B".repeat(64),
     };
     let issuer = first.issuer.clone();
-    let xml = aeat::submission_request(
-        &issuer,
-        &system(),
-        &[
-            Record::Registration(first),
-            Record::Cancellation(cancellation),
-        ],
-    );
+    let corrections = [
+        PreviousRejection::No,
+        PreviousRejection::Yes,
+        PreviousRejection::NotRegistered,
+    ]
+    .map(|previous_rejection| {
+        Record::Registration(Registration {
+            correction: Some(previous_rejection),
+            ..registration()
+        })
+    });
+    let mut records = vec![
+        Record::Registration(first),
+        Record::Cancellation(cancellation),
+    ];
+    records.extend(corrections);
+    let xml = aeat::submission_request(&issuer, None, &system(), &records);
     validate("valid", &xml).unwrap();
+    assert!(
+        xml.contains("<sf:Subsanacion>S</sf:Subsanacion><sf:RechazoPrevio>X</sf:RechazoPrevio>")
+    );
+
+    // Submitted by a representative, e.g. under a power of attorney.
+    let representative = party("Jane Roe", "12345678Z");
+    let xml = aeat::submission_request(&issuer, Some(&representative), &system(), &records[..1]);
+    validate("representative", &xml).unwrap();
+    assert!(xml.contains("<sf:Representante>"));
 
     // The check is real: a NIF that is not 9 characters long is refused.
     let mut invalid = registration();
     invalid.recipient.nif = "A1".to_owned();
-    let xml = aeat::submission_request(&issuer, &system(), &[Record::Registration(invalid)]);
+    let xml = aeat::submission_request(&issuer, None, &system(), &[Record::Registration(invalid)]);
     let error = validate("invalid", &xml).unwrap_err();
     assert!(error.contains("NIF"), "{error}");
 }

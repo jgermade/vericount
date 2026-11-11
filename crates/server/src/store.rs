@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::{FromRow, PgConnection, PgPool};
 use vericounts_core::{
-    aeat::{Cancellation, Party, PreviousRecord, Record, Registration},
+    aeat::{Cancellation, Party, PreviousRecord, PreviousRejection, Record, Registration},
     hash::{self, CancellationFields, RegistrationFields},
     invoice::{self, Line, TaxBreakdown, Totals, ValidationError},
 };
@@ -103,6 +103,8 @@ pub struct BillingRecord {
     #[sqlx(skip)]
     pub aeat: Option<RecordResult>,
     pub record_type: String,
+    /// Whether the record replaces an earlier one of the same invoice.
+    pub correction: bool,
     pub previous_hash: String,
     pub hash: String,
     pub generated_at: String,
@@ -353,6 +355,121 @@ pub async fn cancel_invoice(
     Ok(())
 }
 
+/// Adds a record that takes the place of the invoice's latest rejected
+/// record, with the same data, so that it can be sent again.
+pub async fn correct_rejected_record(
+    pool: &PgPool,
+    issuer: &Issuer,
+    invoice_id: i64,
+    now: DateTime<Tz>,
+) -> Result<(), StoreError> {
+    let mut tx = pool.begin().await?;
+    lock_chain(&mut tx, &issuer.nif).await?;
+
+    let invoice: Option<(String, NaiveDate, String, Decimal, Decimal)> = sqlx::query_as(
+        "SELECT series_number, issue_date, invoice_type, total_tax, total_amount
+         FROM invoices WHERE id = $1 AND issuer_nif = $2",
+    )
+    .bind(invoice_id)
+    .bind(&issuer.nif)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (series_number, issue_date, invoice_type, total_tax, total_amount) =
+        invoice.ok_or(StoreError::NotFound)?;
+
+    let records: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, record_type FROM billing_records WHERE invoice_id = $1 ORDER BY id",
+    )
+    .bind(invoice_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let states = submission::record_states(pool, &issuer.nif).await?;
+    let state = |id: &i64| states.get(id).map_or(RecordState::Pending, |r| r.state);
+    let Some((_, record_type)) = records
+        .iter()
+        .rev()
+        .find(|(id, _)| state(id) == RecordState::Rejected)
+    else {
+        return Err(StoreError::Conflict(
+            "nothing_to_correct",
+            "the invoice has no rejected record",
+        ));
+    };
+
+    let previous_hash = last_hash(&mut tx, &issuer.nif).await?;
+    let generated_at = hash::format_generated_at(&now);
+    if record_type == "cancellation" {
+        let record_hash = hash::cancellation_hash(&CancellationFields {
+            issuer_nif: &issuer.nif,
+            series_number: &series_number,
+            issue_date,
+            previous_hash: &previous_hash,
+            generated_at: &generated_at,
+        });
+        sqlx::query(
+            "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
+                 issue_date, previous_rejection, previous_hash, hash, generated_at)
+             VALUES ($1, 'cancellation', $2, $3, $4, 'S', $5, $6, $7)",
+        )
+        .bind(invoice_id)
+        .bind(&issuer.nif)
+        .bind(&series_number)
+        .bind(issue_date)
+        .bind(&previous_hash)
+        .bind(&record_hash)
+        .bind(&generated_at)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        // X when the AEAT holds no registration of the invoice; S when it
+        // holds one and what it rejected was a correction.
+        let registered = records.iter().any(|(id, record_type)| {
+            record_type == "registration"
+                && matches!(
+                    state(id),
+                    RecordState::Accepted | RecordState::AcceptedWithErrors
+                )
+        });
+        let previous_rejection = if registered {
+            PreviousRejection::Yes
+        } else {
+            PreviousRejection::NotRegistered
+        };
+        let record_hash = hash::registration_hash(&RegistrationFields {
+            issuer_nif: &issuer.nif,
+            series_number: &series_number,
+            issue_date,
+            invoice_type: &invoice_type,
+            total_tax,
+            total_amount,
+            previous_hash: &previous_hash,
+            generated_at: &generated_at,
+        });
+        sqlx::query(
+            "INSERT INTO billing_records (invoice_id, record_type, issuer_nif, series_number,
+                 issue_date, invoice_type, total_tax, total_amount, correction,
+                 previous_rejection, previous_hash, hash, generated_at)
+             VALUES ($1, 'registration', $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11)",
+        )
+        .bind(invoice_id)
+        .bind(&issuer.nif)
+        .bind(&series_number)
+        .bind(issue_date)
+        .bind(&invoice_type)
+        .bind(total_tax)
+        .bind(total_amount)
+        .bind(previous_rejection.code())
+        .bind(&previous_hash)
+        .bind(&record_hash)
+        .bind(&generated_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 const CANCELLED: &str = "EXISTS (SELECT FROM billing_records r
      WHERE r.invoice_id = i.id AND r.record_type = 'cancellation')";
 
@@ -369,7 +486,7 @@ pub async fn list_invoices(
     .fetch_all(pool)
     .await?;
 
-    let results = submission::record_results(pool, issuer_nif).await?;
+    let results = submission::record_states(pool, issuer_nif).await?;
     let records: Vec<(i64, i64)> =
         sqlx::query_as("SELECT invoice_id, id FROM billing_records WHERE issuer_nif = $1")
             .bind(issuer_nif)
@@ -439,13 +556,14 @@ pub async fn get_invoice(
     .collect();
 
     let mut records: Vec<BillingRecord> = sqlx::query_as(
-        "SELECT id, record_type, previous_hash, hash, generated_at
+        "SELECT id, record_type, previous_rejection IS NOT NULL AS correction,
+                previous_hash, hash, generated_at
          FROM billing_records WHERE invoice_id = $1 ORDER BY id",
     )
     .bind(invoice_id)
     .fetch_all(pool)
     .await?;
-    let results = submission::record_results(pool, issuer_nif).await?;
+    let results = submission::record_states(pool, issuer_nif).await?;
     for record in &mut records {
         record.aeat = Some(results.get(&record.id).cloned().unwrap_or(RecordResult {
             state: RecordState::Pending,
@@ -552,6 +670,8 @@ struct RecordRow {
     issue_date: NaiveDate,
     hash: String,
     generated_at: String,
+    correction: bool,
+    previous_rejection: Option<String>,
     issuer_name: String,
     invoice_type: String,
     description: String,
@@ -569,7 +689,7 @@ pub async fn chain_records(
 ) -> Result<Vec<(i64, Record)>, StoreError> {
     let rows: Vec<RecordRow> = sqlx::query_as(
         "SELECT r.id, r.invoice_id, r.record_type, r.series_number, r.issue_date, r.hash,
-                r.generated_at, i.issuer_name, i.invoice_type, i.description,
+                r.generated_at, r.correction, r.previous_rejection, i.issuer_name, i.invoice_type, i.description,
                 i.recipient_name, i.recipient_nif, i.total_tax, i.total_amount
          FROM billing_records r JOIN invoices i ON i.id = r.invoice_id
          WHERE r.issuer_nif = $1 ORDER BY r.id",
@@ -600,6 +720,7 @@ pub async fn chain_records(
                 issuer_nif: issuer_nif.to_owned(),
                 series_number: row.series_number,
                 issue_date: row.issue_date,
+                previous_rejection: row.previous_rejection.is_some(),
                 previous: previous.take(),
                 generated_at: row.generated_at,
                 hash: row.hash,
@@ -618,6 +739,11 @@ pub async fn chain_records(
                     name: row.recipient_name,
                     nif: row.recipient_nif,
                 },
+                correction: row
+                    .previous_rejection
+                    .as_deref()
+                    .filter(|_| row.correction)
+                    .and_then(PreviousRejection::from_code),
                 taxes: tax_rows
                     .iter()
                     .filter(|(invoice_id, ..)| *invoice_id == row.invoice_id)

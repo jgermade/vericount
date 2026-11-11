@@ -6,9 +6,10 @@
 //! - the message against the official schemas, when `xmllint` validation
 //!   is enabled;
 //! - the hash of every record, recomputed from its fields;
-//! - the chain: every record must follow the last one accepted for its
-//!   issuer;
-//! - duplicated registrations and cancellations of unknown invoices.
+//! - the chain: every record must follow the last record received from
+//!   its issuer, whether that one was accepted or not;
+//! - duplicated registrations, corrections of records it does not hold
+//!   and cancellations of unknown invoices.
 //!
 //! It keeps its state in memory and supports fault injection. Its error
 //! codes and descriptions are illustrative: they have not been compared
@@ -49,6 +50,7 @@ pub mod codes {
     pub const WRONG_HASH: u32 = 2000;
     pub const BROKEN_CHAIN: u32 = 2001;
     pub const UNKNOWN_INVOICE: u32 = 3002;
+    pub const INJECTED: u32 = 1104;
 }
 
 /// A failure to answer the next request with.
@@ -60,11 +62,14 @@ pub enum Fault {
     SoapFault,
     /// Answer with a body that is not XML.
     Garbage,
+    /// Answer normally, but reject every record that would be accepted,
+    /// as the AEAT does when the data of a record is wrong.
+    RejectRecords,
 }
 
 #[derive(Debug, Default)]
 struct Inner {
-    /// Hash of the last accepted record, per issuer NIF.
+    /// Hash of the last record received with a valid hash, per issuer NIF.
     last_hash: HashMap<String, String>,
     /// Registered invoices: (issuer NIF, series and number).
     registered: HashSet<(String, String)>,
@@ -146,8 +151,9 @@ async fn handle(State(mock): State<Mock>, body: String) -> Response {
         }
         Some(Fault::SoapFault) => return soap_fault(codes::SCHEMA, "Injected fault"),
         Some(Fault::Garbage) => return (StatusCode::OK, "<<not xml").into_response(),
-        None => {}
+        Some(Fault::RejectRecords) | None => {}
     }
+    let reject_records = fault == Some(Fault::RejectRecords);
 
     let Some(request) = xml::parse(&body).ok().and_then(|envelope| {
         envelope
@@ -161,7 +167,7 @@ async fn handle(State(mock): State<Mock>, body: String) -> Response {
             return soap_fault(codes::SCHEMA, &error);
         }
     }
-    match respond(&mock, &request) {
+    match respond(&mock, &request, reject_records) {
         Some(response) => xml_response(StatusCode::OK, soap_envelope(&response)),
         None => soap_fault(codes::SCHEMA, "The request lacks required elements"),
     }
@@ -217,7 +223,7 @@ fn parse_date(text: &str) -> Option<NaiveDate> {
 
 /// Checks one record against the state and, if it is accepted, updates
 /// the state. Returns `None` when required elements are missing.
-fn process(inner: &mut Inner, record: &Element) -> Option<Line> {
+fn process(inner: &mut Inner, record: &Element, reject: bool) -> Option<Line> {
     let (body, cancellation) = match record.child("RegistroAlta") {
         Some(body) => (body, false),
         None => (record.child("RegistroAnulacion")?, true),
@@ -269,27 +275,44 @@ fn process(inner: &mut Inner, record: &Element) -> Option<Line> {
 
     let key = (issuer_nif.clone(), series_number.clone());
     let last_hash = inner.last_hash.get(&issuer_nif).map_or("", String::as_str);
-    let error = if record_hash != expected_hash {
+    let registered = inner.registered.contains(&key);
+    // `Subsanacion` with `RechazoPrevio`: X corrects a record the AEAT
+    // does not hold, N and S correct one it holds.
+    let correction = body
+        .text_at(&["Subsanacion"])
+        .filter(|value| *value == "S")
+        .map(|_| body.text_at(&["RechazoPrevio"]).unwrap_or("N"));
+    let valid_hash = record_hash == expected_hash;
+    let error = if !valid_hash {
         Some((codes::WRONG_HASH, "The hash does not match the record"))
     } else if previous_hash != last_hash {
         Some((
             codes::BROKEN_CHAIN,
-            "The record does not follow the last accepted record",
+            "The record does not follow the last record received",
         ))
-    } else if !cancellation && inner.registered.contains(&key) {
-        Some((codes::DUPLICATED, "Duplicated record"))
-    } else if cancellation && !inner.registered.contains(&key) {
+    } else if cancellation && !registered {
         Some((codes::UNKNOWN_INVOICE, "The invoice is not registered"))
     } else if cancellation && inner.cancelled.contains(&key) {
         Some((codes::DUPLICATED, "The invoice is already cancelled"))
+    } else if !cancellation && registered && matches!(correction, None | Some("X")) {
+        Some((codes::DUPLICATED, "Duplicated record"))
+    } else if !cancellation && !registered && matches!(correction, Some("N" | "S")) {
+        Some((
+            codes::UNKNOWN_INVOICE,
+            "The record to correct is not registered",
+        ))
+    } else if reject {
+        Some((codes::INJECTED, "Injected rejection"))
     } else {
         None
     };
 
-    if error.is_none() {
+    if valid_hash {
         inner
             .last_hash
             .insert(issuer_nif.clone(), record_hash.to_owned());
+    }
+    if error.is_none() {
         if cancellation {
             inner.cancelled.insert(key);
         } else {
@@ -306,7 +329,7 @@ fn process(inner: &mut Inner, record: &Element) -> Option<Line> {
 }
 
 /// Builds the `RespuestaRegFactuSistemaFacturacion` element.
-fn respond(mock: &Mock, request: &Element) -> Option<String> {
+fn respond(mock: &Mock, request: &Element, reject: bool) -> Option<String> {
     let issuer = request.at(&["Cabecera", "ObligadoEmision"])?;
     let issuer_name = issuer.text_at(&["NombreRazon"])?;
     let issuer_nif = issuer.text_at(&["NIF"])?;
@@ -314,7 +337,7 @@ fn respond(mock: &Mock, request: &Element) -> Option<String> {
     let mut inner = mock.inner.lock().unwrap();
     let mut lines = Vec::new();
     for record in request.children_named("RegistroFactura") {
-        lines.push(process(&mut inner, record)?);
+        lines.push(process(&mut inner, record, reject)?);
     }
     if lines.is_empty() {
         return None;

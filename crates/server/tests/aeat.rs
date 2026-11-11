@@ -101,7 +101,7 @@ async fn stored_records_are_accepted_by_the_mock(pool: PgPool) {
     assert_eq!(records.len(), 3);
 
     // Two requests, to check that the chain continues across requests.
-    let request = aeat::submission_request(&issuer(), &system(), &records[..2]);
+    let request = aeat::submission_request(&issuer(), None, &system(), &records[..2]);
     let submission = client.submit(&request).await.unwrap();
     assert_eq!(submission.response.status, SubmissionStatus::Accepted);
     assert_eq!(submission.response.wait_seconds, 60);
@@ -110,7 +110,7 @@ async fn stored_records_are_accepted_by_the_mock(pool: PgPool) {
     assert_eq!(submission.response.records[1].series_number, "A2026-0002");
     assert!(submission.request_xml.contains("Customer &amp; Sons SA"));
 
-    let request = aeat::submission_request(&issuer(), &system(), &records[2..]);
+    let request = aeat::submission_request(&issuer(), None, &system(), &records[2..]);
     let submission = client.submit(&request).await.unwrap();
     assert_eq!(submission.response.status, SubmissionStatus::Accepted);
     assert_eq!(
@@ -121,7 +121,7 @@ async fn stored_records_are_accepted_by_the_mock(pool: PgPool) {
     assert_eq!(mock.requests().len(), 2);
 
     // Sending a record again is refused, and so is the whole request.
-    let request = aeat::submission_request(&issuer(), &system(), &records[2..]);
+    let request = aeat::submission_request(&issuer(), None, &system(), &records[2..]);
     let submission = client.submit(&request).await.unwrap();
     assert_eq!(submission.response.status, SubmissionStatus::Rejected);
     assert_eq!(submission.response.csv, None);
@@ -143,28 +143,24 @@ async fn the_mock_rejects_wrong_hashes_and_broken_chains(pool: PgPool) {
     let code = |code: u32| Some(code.to_string());
 
     // Skipping the first record breaks the chain.
-    let request = aeat::submission_request(&issuer(), &system(), &records[1..2]);
+    let request = aeat::submission_request(&issuer(), None, &system(), &records[1..2]);
     let response = client.submit(&request).await.unwrap().response;
     assert_eq!(response.status, SubmissionStatus::Rejected);
     assert_eq!(response.records[0].error_code, code(codes::BROKEN_CHAIN));
 
     // A record whose content does not match its hash is refused, and the
     // records after it no longer follow an accepted record.
+    let (_fresh_mock, client) = start_mock().await;
     let mut tampered = records.clone();
     if let Record::Registration(record) = &mut tampered[1] {
         record.total_amount += rust_decimal::Decimal::ONE;
     }
-    let request = aeat::submission_request(&issuer(), &system(), &tampered);
+    let request = aeat::submission_request(&issuer(), None, &system(), &tampered);
     let response = client.submit(&request).await.unwrap().response;
     assert_eq!(response.status, SubmissionStatus::PartiallyAccepted);
     assert_eq!(response.records[0].status, RecordStatus::Accepted);
     assert_eq!(response.records[1].error_code, code(codes::WRONG_HASH));
     assert_eq!(response.records[2].error_code, code(codes::BROKEN_CHAIN));
-
-    // The untouched records are then accepted.
-    let request = aeat::submission_request(&issuer(), &system(), &records[1..]);
-    let response = client.submit(&request).await.unwrap().response;
-    assert_eq!(response.status, SubmissionStatus::Accepted);
 }
 
 #[sqlx::test]
@@ -172,7 +168,7 @@ async fn failures_are_reported_by_kind(pool: PgPool) {
     let app = common::app(pool.clone()).await;
     post(&app, "/api/invoices", invoice_body()).await;
     let (mock, client) = start_mock().await;
-    let request = aeat::submission_request(&issuer(), &system(), &records(&pool).await);
+    let request = aeat::submission_request(&issuer(), None, &system(), &records(&pool).await);
 
     mock.inject(Fault::HttpStatus(503));
     mock.inject(Fault::SoapFault);
@@ -320,42 +316,113 @@ mod worker {
     }
 
     #[sqlx::test]
-    async fn a_rejected_record_blocks_the_queue(pool: PgPool) {
+    async fn a_rejected_record_blocks_the_queue_until_it_is_corrected(pool: PgPool) {
         let app = common::app(pool.clone()).await;
         let (mock, submitter) = submitter().await;
-        post(&app, "/api/invoices", invoice_body()).await;
-        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
-
-        // The mock forgets everything, as if the AEAT had lost the first
-        // record: the next one no longer follows an accepted record.
-        let (fresh_mock, fresh) = super::start_mock().await;
-        let fresh = Submitter::new(fresh, system());
+        let first = post(&app, "/api/invoices", invoice_body()).await.json();
         let second = post(&app, "/api/invoices", invoice_body()).await.json();
-        post(&app, "/api/invoices", invoice_body()).await;
-        assert_eq!(sent(&run(&pool, &fresh).await), (2, "rejected"));
+        let correction = |invoice: &Value| format!("/api/invoices/{}/correction", invoice["id"]);
 
-        let record_id = second["records"][0]["id"].as_i64().unwrap();
-        assert_eq!(run(&pool, &fresh).await, RunOutcome::Blocked { record_id });
-        assert_eq!(
-            fresh_mock.requests().len(),
-            1,
-            "nothing is sent while blocked"
-        );
-        assert_eq!(mock.requests().len(), 1);
+        // Nothing to correct while nothing is rejected.
+        let response = post(&app, &correction(&first), json!({})).await;
+        assert_eq!(response.status, StatusCode::CONFLICT);
+        assert_eq!(response.json()["error"]["code"], "nothing_to_correct");
 
-        let detail = get(&app, &format!("/api/invoices/{}", second["id"]))
-            .await
-            .json();
-        assert_eq!(detail["records"][0]["aeat"]["state"], "rejected");
+        mock.inject(Fault::RejectRecords);
+        assert_eq!(sent(&run(&pool, &submitter).await), (2, "rejected"));
+        let record_id = first["records"][0]["id"].as_i64().unwrap();
         assert_eq!(
-            detail["records"][0]["aeat"]["error_code"],
-            codes::BROKEN_CHAIN.to_string()
+            run(&pool, &submitter).await,
+            RunOutcome::Blocked { record_id }
         );
+        assert_eq!(mock.requests().len(), 1, "nothing is sent while blocked");
         let status = get(&app, "/api/aeat").await.json();
         assert_eq!(
             (&status["rejected"], &status["pending"]),
             (&json!(2), &json!(0))
         );
+        let list = get(&app, "/api/invoices").await.json();
+        assert_eq!(list[0]["aeat_state"], "rejected");
+
+        // Correcting the first invoice adds a record at the end of the
+        // chain; the second invoice still blocks what comes after it.
+        let corrected = post(&app, &correction(&first), json!({})).await;
+        assert_eq!(corrected.status, StatusCode::OK, "{:?}", corrected.json());
+        let corrected = corrected.json();
+        let records = corrected["records"].as_array().unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["aeat"]["state"], "superseded");
+        assert_eq!(
+            records[0]["aeat"]["error_code"],
+            codes::INJECTED.to_string()
+        );
+        assert_eq!(records[1]["aeat"]["state"], "pending");
+        assert_eq!(records[1]["correction"], true);
+        assert_eq!(records[1]["previous_hash"], second["records"][0]["hash"]);
+        let second_record = second["records"][0]["id"].as_i64().unwrap();
+        assert_eq!(
+            run(&pool, &submitter).await,
+            RunOutcome::Blocked {
+                record_id: second_record
+            }
+        );
+
+        post(&app, &correction(&second), json!({})).await;
+        assert_eq!(sent(&run(&pool, &submitter).await), (2, "accepted"));
+        assert_eq!(run(&pool, &submitter).await, RunOutcome::NothingPending);
+        assert_eq!(mock.registered_count(), 2);
+
+        // The corrections say that the AEAT did not hold the records.
+        let request = mock.requests().pop().unwrap();
+        assert_eq!(
+            request
+                .matches("<sf:Subsanacion>S</sf:Subsanacion><sf:RechazoPrevio>X</sf:RechazoPrevio>")
+                .count(),
+            2
+        );
+        let list = get(&app, "/api/invoices").await.json();
+        assert_eq!(list[0]["aeat_state"], "accepted");
+        assert_eq!(list[1]["aeat_state"], "accepted");
+        let status = get(&app, "/api/aeat").await.json();
+        assert_eq!(
+            (&status["rejected"], &status["pending"]),
+            (&json!(0), &json!(0))
+        );
+        assert_eq!(
+            get(&app, "/api/chain/verification").await.json()["records"],
+            4
+        );
+        assert_eq!(
+            get(&app, "/api/chain/verification").await.json()["valid"],
+            true
+        );
+        let response = post(&app, &correction(&first), json!({})).await;
+        assert_eq!(response.status, StatusCode::CONFLICT);
+    }
+
+    #[sqlx::test]
+    async fn rejected_cancellations_and_corrections_are_corrected_too(pool: PgPool) {
+        let app = common::app(pool.clone()).await;
+        let (mock, submitter) = submitter().await;
+        let invoice = post(&app, "/api/invoices", invoice_body()).await.json();
+        let id = &invoice["id"];
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
+
+        post(&app, &format!("/api/invoices/{id}/cancellation"), json!({})).await;
+        mock.inject(Fault::RejectRecords);
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "rejected"));
+        let corrected = post(&app, &format!("/api/invoices/{id}/correction"), json!({}))
+            .await
+            .json();
+        assert_eq!(corrected["cancelled"], true);
+        let records = corrected["records"].as_array().unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[2]["record_type"], "cancellation");
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
+        let request = mock.requests().pop().unwrap();
+        assert!(request.contains("</sf:IDFactura><sf:RechazoPrevio>S</sf:RechazoPrevio>"));
+        let list = get(&app, "/api/invoices").await.json();
+        assert_eq!(list[0]["aeat_state"], "accepted");
     }
 
     #[sqlx::test]
@@ -377,4 +444,40 @@ mod worker {
         assert_eq!(response.json()["outcome"], "accepted");
         assert_eq!(get(&app, "/api/aeat").await.json()["enabled"], true);
     }
+}
+
+#[sqlx::test]
+async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
+    use std::sync::Arc;
+    use vericounts_server::{certificate::CertificateInfo, submission::Submitter};
+
+    common::sign_in(&pool).await;
+    common::seed(&pool).await;
+    let (mock, client) = start_mock().await;
+    let mut submitter = Submitter::new(client, system());
+    submitter.representative = Some(Party {
+        name: "Jane Roe".to_owned(),
+        nif: "12345678Z".to_owned(),
+    });
+    submitter.certificate = Some(CertificateInfo {
+        subject: "ROE JANE - 12345678Z".to_owned(),
+        nif: Some("12345678Z".to_owned()),
+        of_legal_person: false,
+        expires_at: chrono::Utc::now(),
+    });
+    let mut state = common::state(pool.clone());
+    state.submitter = Some(Arc::new(submitter));
+    let app = vericounts_server::app(state, common::web_dir());
+
+    post(&app, "/api/invoices", invoice_body()).await;
+    let response = post(&app, "/api/aeat/submissions", json!({})).await.json();
+    assert_eq!(response["outcome"], "accepted");
+    assert!(mock.requests()[0].contains(
+        "<sf:Representante><sf:NombreRazon>Jane Roe</sf:NombreRazon><sf:NIF>12345678Z</sf:NIF>"
+    ));
+
+    let status = get(&app, "/api/aeat").await.json();
+    assert_eq!(status["certificate"]["nif"], "12345678Z");
+    assert_eq!(status["certificate_matches_company"], false);
+    assert_eq!(status["representative_nif"], "12345678Z");
 }

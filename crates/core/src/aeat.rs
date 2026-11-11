@@ -53,6 +53,38 @@ pub struct PreviousRecord {
     pub hash: String,
 }
 
+/// How a correcting record relates to what the AEAT already has
+/// (`RechazoPrevio`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviousRejection {
+    /// `N`: the AEAT holds the record and has not rejected a correction.
+    No,
+    /// `S`: the AEAT holds the record and rejected an earlier correction.
+    Yes,
+    /// `X`: the AEAT does not hold the record, for instance because it
+    /// rejected it.
+    NotRegistered,
+}
+
+impl PreviousRejection {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::No => "N",
+            Self::Yes => "S",
+            Self::NotRegistered => "X",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "N" => Some(Self::No),
+            "S" => Some(Self::Yes),
+            "X" => Some(Self::NotRegistered),
+            _ => None,
+        }
+    }
+}
+
 /// A registration record (`RegistroAlta`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Registration {
@@ -62,6 +94,9 @@ pub struct Registration {
     pub invoice_type: String,
     pub description: String,
     pub recipient: Party,
+    /// Set when the record corrects an earlier registration of the same
+    /// invoice (`Subsanacion`).
+    pub correction: Option<PreviousRejection>,
     pub taxes: Vec<TaxBreakdown>,
     pub total_tax: Decimal,
     pub total_amount: Decimal,
@@ -76,6 +111,9 @@ pub struct Cancellation {
     pub issuer_nif: String,
     pub series_number: String,
     pub issue_date: NaiveDate,
+    /// Whether the AEAT rejected an earlier cancellation of the invoice
+    /// (`RechazoPrevio`).
+    pub previous_rejection: bool,
     pub previous: Option<PreviousRecord>,
     pub generated_at: String,
     pub hash: String,
@@ -141,7 +179,13 @@ fn write_registration(writer: &mut Writer, record: &Registration, system: &Softw
         .leaf("sf:NumSerieFactura", &record.series_number)
         .leaf("sf:FechaExpedicionFactura", &format_date(record.issue_date))
         .close()
-        .leaf("sf:NombreRazonEmisor", &record.issuer.name)
+        .leaf("sf:NombreRazonEmisor", &record.issuer.name);
+    if let Some(previous_rejection) = record.correction {
+        writer
+            .leaf("sf:Subsanacion", "S")
+            .leaf("sf:RechazoPrevio", previous_rejection.code());
+    }
+    writer
         .leaf("sf:TipoFactura", &record.invoice_type)
         .leaf("sf:DescripcionOperacion", &record.description)
         .open("sf:Destinatarios")
@@ -192,6 +236,9 @@ fn write_cancellation(writer: &mut Writer, record: &Cancellation, system: &Softw
             &format_date(record.issue_date),
         )
         .close();
+    if record.previous_rejection {
+        writer.leaf("sf:RechazoPrevio", "S");
+    }
     write_chain_and_system(
         writer,
         &record.previous,
@@ -205,11 +252,19 @@ fn write_cancellation(writer: &mut Writer, record: &Cancellation, system: &Softw
 /// Builds the `RegFactuSistemaFacturacion` element for a batch of records
 /// of one issuer, in chain order.
 ///
+/// `representative` is whoever submits the records on behalf of the
+/// issuer, when it is not the issuer itself (`Representante`).
+///
 /// # Panics
 ///
 /// If `records` is empty or has more than [`MAX_RECORDS_PER_REQUEST`]
 /// records.
-pub fn submission_request(issuer: &Party, system: &SoftwareSystem, records: &[Record]) -> String {
+pub fn submission_request(
+    issuer: &Party,
+    representative: Option<&Party>,
+    system: &SoftwareSystem,
+    records: &[Record],
+) -> String {
     assert!(
         (1..=MAX_RECORDS_PER_REQUEST).contains(&records.len()),
         "a request carries 1 to {MAX_RECORDS_PER_REQUEST} records"
@@ -227,8 +282,15 @@ pub fn submission_request(issuer: &Party, system: &SoftwareSystem, records: &[Re
         .open("sf:ObligadoEmision")
         .leaf("sf:NombreRazon", &issuer.name)
         .leaf("sf:NIF", &issuer.nif)
-        .close()
         .close();
+    if let Some(representative) = representative {
+        writer
+            .open("sf:Representante")
+            .leaf("sf:NombreRazon", &representative.name)
+            .leaf("sf:NIF", &representative.nif)
+            .close();
+    }
+    writer.close();
     for record in records {
         writer.open("sfLR:RegistroFactura");
         match record {
@@ -471,6 +533,7 @@ pub(crate) mod tests {
                     name: "Customer SA".to_owned(),
                     nif: "A58818501".to_owned(),
                 },
+                correction: None,
                 taxes,
                 total_tax: "106.00".parse().unwrap(),
                 total_amount: "630.99".parse().unwrap(),
@@ -482,6 +545,7 @@ pub(crate) mod tests {
                 issuer_nif: "B12345674".to_owned(),
                 series_number: "A2026-0001".to_owned(),
                 issue_date,
+                previous_rejection: false,
                 previous: Some(PreviousRecord {
                     issuer_nif: "B12345674".to_owned(),
                     series_number: "A2026-0001".to_owned(),
@@ -496,7 +560,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_has_the_expected_content() {
-        let xml = submission_request(&issuer(), &system(), &records());
+        let xml = submission_request(&issuer(), None, &system(), &records());
         let root = xml::parse(&xml).unwrap();
         assert_eq!(root.name, "RegFactuSistemaFacturacion");
         assert_eq!(

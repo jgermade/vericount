@@ -93,6 +93,9 @@ pub struct Submission {
     pub producer_name: String,
     pub producer_nif: String,
     pub installation_number: String,
+    /// Name and NIF of whoever submits on behalf of the company, e.g.
+    /// under a power of attorney registered at the AEAT.
+    pub representative: Option<(String, String)>,
 }
 
 impl Submission {
@@ -118,6 +121,23 @@ impl Submission {
             .map_err(|e| e.to_string())?,
             installation_number: env::var("VERICOUNTS_INSTALLATION_NUMBER")
                 .unwrap_or_else(|_| "1".to_owned()),
+            representative: match (
+                env::var("VERICOUNTS_AEAT_REPRESENTATIVE_NAME").ok(),
+                env::var("VERICOUNTS_AEAT_REPRESENTATIVE_NIF").ok(),
+            ) {
+                (None, None) => None,
+                (Some(name), Some(nif)) => Some((
+                    invoice::validate_text("VERICOUNTS_AEAT_REPRESENTATIVE_NAME", &name)
+                        .map_err(|e| e.to_string())?,
+                    invoice::validate_tax_id("VERICOUNTS_AEAT_REPRESENTATIVE_NIF", &nif)
+                        .map_err(|e| e.to_string())?,
+                )),
+                _ => {
+                    return Err("set both VERICOUNTS_AEAT_REPRESENTATIVE_NAME and \
+                         VERICOUNTS_AEAT_REPRESENTATIVE_NIF, or neither"
+                        .to_owned())
+                }
+            },
         }))
     }
 }

@@ -34,6 +34,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/invoices/preview", post(preview_invoice))
         .route("/invoices/{id}", get(get_invoice))
         .route("/invoices/{id}/cancellation", post(cancel_invoice))
+        .route("/invoices/{id}/correction", post(correct_invoice))
         .route("/invoices/{id}/qr.svg", get(invoice_qr))
         .route("/summary", get(summary))
         .route("/chain/verification", get(verify_chain))
@@ -382,7 +383,7 @@ async fn aeat_status(State(state): State<AppState>) -> Result<Json<QueueStatus>,
         submission::queue_status(
             &state.pool,
             &directory::issuer(&state.pool).await?.nif,
-            state.submitter.is_some(),
+            state.submitter.as_deref(),
         )
         .await?,
     ))
@@ -551,4 +552,24 @@ async fn summary(
     Ok(Json(
         store::period_summary(&state.pool, &issuer.nif, year, quarter).await?,
     ))
+}
+
+/// Replaces the invoice's rejected record with a new one, to be sent
+/// again ("subsanación").
+async fn correct_invoice(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<Json<InvoiceResponse>, ApiError> {
+    let issuer = directory::issuer(&state.pool).await?;
+    store::correct_rejected_record(&state.pool, &issuer, id, now()).await?;
+    let detail = id.to_string();
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "invoice.record_corrected",
+        &detail,
+    )
+    .await;
+    Ok(Json(invoice_response(&state, id).await?))
 }
