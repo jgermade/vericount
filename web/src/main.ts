@@ -1,5 +1,6 @@
 import "./trusted-types"
 import App from "./App.html"
 import { api } from "./api"
+import { es } from "./i18n/es"
 
-App.mount("#app", { api })
+App.mount("#app", { api, t: es })

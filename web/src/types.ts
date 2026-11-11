@@ -39,8 +39,30 @@ export interface InvoicePreview extends Totals {
   taxes: TaxBreakdown[]
 }
 
+export type AeatState = "pending" | "accepted" | "accepted_with_errors" | "rejected"
+
+export interface AeatResult {
+  state: AeatState
+  error_code: string | null
+  error_description: string | null
+}
+
+export interface AeatQueue {
+  enabled: boolean
+  pending: number
+  rejected: number
+  accepted_with_errors: number
+  last_outcome: string | null
+  last_error: string | null
+}
+
+export interface Session {
+  username: string
+}
+
 export interface InvoiceSummary {
   id: number
+  aeat_state: AeatState
   series_number: string
   issue_date: string
   recipient_name: string
@@ -50,6 +72,7 @@ export interface InvoiceSummary {
 
 export interface BillingRecord {
   id: number
+  aeat: AeatResult
   record_type: "registration" | "cancellation"
   previous_hash: string
   hash: string

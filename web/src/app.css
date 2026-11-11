@@ -6,6 +6,8 @@
   --muted: color-mix(in srgb, currentColor 60%, transparent);
   --accent: #1d6fd8;
   --danger: #c62828;
+  --ok: #1b7a4b;
+  --warn: #96600a;
 }
 
 * {
@@ -68,6 +70,9 @@ button.primary {
 button.danger {
   border-color: var(--danger);
   color: var(--danger);
+}
+
+main > button.danger {
   margin-top: 1rem;
 }
 
@@ -106,6 +111,9 @@ fieldset {
 .actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.actions.spread {
   justify-content: space-between;
 }
 
@@ -149,6 +157,22 @@ fieldset {
   font-size: 0.75rem;
   font-weight: normal;
   padding: 0 0.25rem;
+}
+
+.tag.accepted {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.tag.pending,
+.tag.accepted_with_errors {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 0.875rem;
 }
 
 .error {

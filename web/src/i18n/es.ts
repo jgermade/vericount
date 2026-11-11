@@ -1,0 +1,97 @@
+// User interface texts. The interface is in Spanish; identifiers and
+// comments stay in English.
+
+import type { AeatState } from "../types"
+
+export const es = {
+  appName: "vericounts",
+  back: "Volver",
+  signOut: "Salir",
+  signIn: {
+    title: "Acceso",
+    username: "Usuario",
+    password: "Contraseña",
+    submit: "Entrar",
+  },
+  list: {
+    newInvoice: "Nueva factura",
+    empty: "Todavía no hay facturas.",
+    cancelled: "anulada",
+    chainOk: (records: number) => `${records} registros, cadena verificada.`,
+    chainBroken: (recordId: number) =>
+      `La cadena de registros está rota en el registro ${recordId}. No emitas facturas hasta revisarlo.`,
+    aeatDisabled: "El envío a la AEAT está desactivado.",
+    aeatPending: (count: number) => `${count} registros pendientes de enviar a la AEAT.`,
+    aeatRejected: (count: number) => `${count} registros rechazados por la AEAT.`,
+    aeatLastError: (error: string) => `Último intento de envío: ${error}`,
+  },
+  form: {
+    title: "Nueva factura",
+    series: "Serie",
+    customerName: "Nombre o razón social del cliente",
+    customerNif: "NIF del cliente",
+    description: "Descripción de la operación",
+    line: (number: number) => `Línea ${number}`,
+    lineDescription: "Concepto",
+    quantity: "Cantidad",
+    unitPrice: "Precio",
+    vat: "IVA %",
+    addLine: "Añadir línea",
+    removeLine: "Quitar línea",
+    review: "Revisar",
+    reviewTitle: "Revisa antes de emitir",
+    irreversible: "Una factura emitida no se puede editar ni borrar, solo anular.",
+    issue: "Emitir factura",
+  },
+  detail: {
+    title: (number: string) => `Factura ${number}`,
+    date: "Fecha",
+    issuer: "Emisor",
+    customer: "Cliente",
+    description: "Descripción",
+    records: "Registros Veri*factu",
+    recordType: { registration: "Alta", cancellation: "Anulación" },
+    firstRecord: "(primer registro)",
+    after: "tras",
+    qrLink: "Comprobar en la AEAT (enlace del QR)",
+    cancel: "Anular factura",
+    confirmCancel: (number: string) => `¿Anular la factura ${number}? No se puede deshacer.`,
+    confirm: "Sí, anular",
+    keep: "No",
+  },
+  totals: {
+    base: "Base",
+    vatOn: (rate: string, base: string) => `IVA ${rate} % sobre ${base}`,
+    total: "Total",
+  },
+  aeatState: {
+    pending: "pendiente",
+    accepted: "enviada",
+    accepted_with_errors: "con errores",
+    rejected: "rechazada",
+  } satisfies Record<AeatState, string>,
+  errors: {
+    invalid_credentials: "Usuario o contraseña incorrectos.",
+    too_many_attempts: "Demasiados intentos fallidos. Prueba de nuevo en unos minutos.",
+    unauthenticated: "La sesión ha caducado. Vuelve a entrar.",
+    already_cancelled: "La factura ya está anulada.",
+    not_found: "No se ha encontrado.",
+    network: "No se puede conectar con el servidor.",
+    unknown: "Algo ha fallado. Inténtalo de nuevo.",
+    validation: (field: string) => `Revisa el dato «${field}».`,
+  },
+  fields: {
+    series: "Serie",
+    "recipient.name": "Nombre del cliente",
+    "recipient.nif": "NIF del cliente (9 letras y números)",
+    description: "Descripción",
+    issue_date: "Fecha",
+    lines: "Líneas",
+    description_line: "Concepto",
+    quantity: "Cantidad",
+    unit_price: "Precio",
+    vat_rate: "IVA",
+  } as Record<string, string>,
+}
+
+export type Texts = typeof es

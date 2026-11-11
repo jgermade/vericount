@@ -4,7 +4,7 @@ Bookkeeping for a Spanish SL with Veri*factu compliance. See the latest roadmap 
 
 ## Status
 
-Issued invoices can be created, listed and cancelled. Each one gets a Veri*factu billing record with a chained hash, stored in insert-only tables. **Records are not sent to the AEAT yet, and the API has no authentication: do not expose the server.**
+Issued invoices can be created, listed and cancelled by a signed-in user. Each one gets a Veri*factu billing record with a chained hash, stored in insert-only tables, and records are sent to the AEAT in order when sending is enabled. So far they have only been sent to the mock in `crates/aeat-mock`, never to the AEAT itself.
 
 ## Development
 
@@ -17,6 +17,9 @@ cd web && npm ci && npm run build
 # Database: migrations run with the owner role
 DATABASE_URL=postgres://owner:secret@127.0.0.1/vericounts cargo run -- migrate
 
+# First user; the password is read from standard input
+DATABASE_URL=postgres://app:secret@127.0.0.1/vericounts cargo run -- create-user admin
+
 # Server: use a login role that is a member of vericounts_app
 DATABASE_URL=postgres://app:secret@127.0.0.1/vericounts \
 VERICOUNTS_ISSUER_NIF=B12345674 VERICOUNTS_ISSUER_NAME="Example SL" \
@@ -28,6 +31,10 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+The session cookie is `Secure`: browsers accept it over plain HTTP only on `localhost` and `127.0.0.1`, so anything else needs HTTPS.
+
+To try the AEAT flow locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas cargo run -p vericounts-aeat-mock` and point `VERICOUNTS_AEAT_ENDPOINT` to the URL it prints.
+
 `npm run dev` in `web/` serves the client with hot reload and proxies `/api` to the server.
 
 Configuration (environment variables):
@@ -38,6 +45,12 @@ Configuration (environment variables):
 | `VERICOUNTS_ISSUER_NIF` | required | NIF of the company that issues the invoices |
 | `VERICOUNTS_ISSUER_NAME` | required | Name of that company |
 | `VERICOUNTS_AEAT_ENV` | `test` | `test` or `production`; selects the QR URL |
+| `VERICOUNTS_AEAT_SUBMIT` | off | Set to `1` to send records to the AEAT |
+| `VERICOUNTS_AEAT_ENDPOINT` | official | Service URL, e.g. the mock; refused in production |
+| `VERICOUNTS_AEAT_IDENTITY_PEM` | none | PEM file with the client certificate and key |
+| `VERICOUNTS_SOFTWARE_PRODUCER_NAME` | required to send | Producer of the software, declared in every record |
+| `VERICOUNTS_SOFTWARE_PRODUCER_NIF` | required to send | NIF of the producer |
+| `VERICOUNTS_INSTALLATION_NUMBER` | `1` | Identifies this installation in every record |
 | `VERICOUNTS_ADDR` | `127.0.0.1:8080` | Listen address |
 | `VERICOUNTS_WEB_DIR` | `web/dist` | Directory with the built web client |
 

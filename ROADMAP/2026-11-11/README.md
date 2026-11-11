@@ -4,6 +4,10 @@ Date: 2026-11-11
 
 > This document summarizes the decisions made so far, what has been proposed but not settled, and what is still open. It is not legal or tax advice: the regulatory parts must be validated with an advisor.
 
+Supporting documents:
+
+- [Interface and entities](interface-and-entities.md): the screens agreed with the author and the database entities they need.
+
 ## 1. Goal
 
 An application to keep the books of an SL (Spanish limited company, currently with a single member) and comply with current Spanish regulations, including Veri*factu integration.
