@@ -3,6 +3,7 @@
 use std::{env, net::SocketAddr};
 
 use vericounts_core::{invoice, qr::AeatEnvironment};
+use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
 /// The company that issues the invoices, as stored in the `company` table.
 #[derive(Debug, Clone)]
@@ -16,7 +17,12 @@ pub struct Issuer {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub aeat_environment: AeatEnvironment,
+    /// Where users open the web client, e.g. `https://books.example.com`.
+    /// Passkeys are bound to its host name, and invitations link to it.
+    pub public_url: Url,
 }
+
+pub const DEFAULT_PUBLIC_URL: &str = "http://localhost:8080";
 
 /// Settings that are only needed to start the server.
 #[derive(Debug, Clone)]
@@ -41,8 +47,39 @@ impl Config {
                 ))
             }
         };
-        Ok(Self { aeat_environment })
+        let public_url =
+            env::var("VERICOUNTS_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_owned());
+        let public_url =
+            Url::parse(&public_url).map_err(|e| format!("VERICOUNTS_PUBLIC_URL: {e}"))?;
+        webauthn(&public_url)?;
+        Ok(Self {
+            aeat_environment,
+            public_url,
+        })
     }
+}
+
+/// Passkey settings for the site at `public_url`.
+///
+/// The relying party is the host name, which must be a domain (passkeys
+/// do not work on an IP address such as 127.0.0.1). On `localhost` any
+/// port is accepted, so the development server can be used too.
+pub fn webauthn(public_url: &Url) -> Result<Webauthn, String> {
+    let Some(host) = public_url.domain() else {
+        return Err("VERICOUNTS_PUBLIC_URL must have a domain name, not an IP address".into());
+    };
+    let localhost = host == "localhost";
+    if public_url.scheme() != "https" && !localhost {
+        return Err("VERICOUNTS_PUBLIC_URL must use https outside localhost".into());
+    }
+    WebauthnBuilder::new(host, public_url)
+        .and_then(|builder| {
+            builder
+                .rp_name("vericounts")
+                .allow_any_port(localhost)
+                .build()
+        })
+        .map_err(|e| format!("VERICOUNTS_PUBLIC_URL: {e}"))
 }
 
 impl Startup {
@@ -145,6 +182,15 @@ impl Submission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn passkeys_need_a_domain_and_https() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        assert!(webauthn(&url("http://localhost:8080")).is_ok());
+        assert!(webauthn(&url("https://books.example.com")).is_ok());
+        assert!(webauthn(&url("http://books.example.com")).is_err());
+        assert!(webauthn(&url("http://127.0.0.1:8080")).is_err());
+    }
 
     #[test]
     fn production_never_uses_an_overridden_endpoint() {

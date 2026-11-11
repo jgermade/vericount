@@ -1,20 +1,15 @@
-//! Users, sessions and request authentication.
+//! Users, sign-in codes, sessions and request authentication.
+//!
+//! There are no passwords. Users are invited by email address; they sign
+//! up and sign in with a one-time code sent to that address, or with a
+//! passkey (see [`crate::passkeys`]). Signing up is the first sign-in of
+//! an invited user.
 //!
 //! A session is a random token kept in an `HttpOnly`, `Secure`,
 //! `SameSite=Strict` cookie; only its SHA-256 is stored. Requests that
 //! change state must also carry a custom header, which browsers do not
 //! let other sites send, and an `Origin` that matches the host.
 
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-    time::{Duration, Instant},
-};
-
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
-};
 use axum::{
     extract::{Request, State},
     http::{
@@ -24,24 +19,30 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-use crate::{api::ApiError, AppState};
+use crate::{api::ApiError, mail, AppState};
 
 pub const SESSION_COOKIE: &str = "__Host-session";
 pub const CSRF_HEADER: &str = "x-csrf-protection";
 pub const SESSION_DAYS: i32 = 7;
-pub const MIN_PASSWORD_LENGTH: usize = 12;
 
-const MAX_FAILED_LOGINS: u32 = 5;
-const FAILED_LOGIN_WINDOW: Duration = Duration::from_secs(300);
+/// How long a sign-in code is valid.
+pub const CODE_MINUTES: i64 = 10;
+/// Wrong guesses allowed per code; after that the code is useless.
+pub const CODE_ATTEMPTS: i32 = 5;
+/// Codes sent to one user per hour, and seconds between two of them.
+pub const CODES_PER_HOUR: i64 = 5;
+pub const CODE_INTERVAL_SECONDS: i64 = 60;
 
 /// The authenticated user of a request.
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub id: i64,
-    pub username: String,
+    pub email: String,
     pub session_id: i64,
 }
 
@@ -57,58 +58,30 @@ pub fn token_hash(token: &str) -> String {
     hex(&Sha256::digest(token.as_bytes()))
 }
 
-pub fn hash_password(password: &str) -> Result<String, String> {
-    if password.chars().count() < MIN_PASSWORD_LENGTH {
-        return Err(format!(
-            "the password must have at least {MIN_PASSWORD_LENGTH} characters"
-        ));
-    }
-    Argon2::default()
-        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-        .map(|hash| hash.to_string())
-        .map_err(|e| e.to_string())
+/// What is stored for a sign-in code. The user id is mixed in so equal
+/// codes of different users do not look alike.
+pub fn code_hash(user_id: i64, code: &str) -> String {
+    token_hash(&format!("{user_id}:{code}"))
 }
 
-fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash)
-        .map(|parsed| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &parsed)
-                .is_ok()
-        })
-        .unwrap_or(false)
+/// A random six-digit code.
+fn new_code() -> String {
+    format!("{:06}", rand::random_range(0..1_000_000u32))
 }
 
-/// Limits failed logins per username, in memory.
-#[derive(Debug, Default)]
-pub struct LoginThrottle {
-    failures: Mutex<HashMap<String, (u32, Instant)>>,
-}
-
-impl LoginThrottle {
-    fn blocked(&self, username: &str) -> bool {
-        let mut failures = self.failures.lock().unwrap();
-        failures.retain(|_, (_, since)| since.elapsed() < FAILED_LOGIN_WINDOW);
-        failures
-            .get(username)
-            .is_some_and(|(count, _)| *count >= MAX_FAILED_LOGINS)
-    }
-
-    fn record_failure(&self, username: &str) {
-        let mut failures = self.failures.lock().unwrap();
-        // Bound the memory an attacker can use with made-up usernames.
-        if failures.len() >= 10_000 {
-            failures.clear();
-        }
-        failures
-            .entry(username.to_owned())
-            .or_insert((0, Instant::now()))
-            .0 += 1;
-    }
-
-    fn clear(&self, username: &str) {
-        self.failures.lock().unwrap().remove(username);
-    }
+/// Trims and lowercases an email address and checks its shape. Whether it
+/// exists is only known when the code arrives.
+pub fn normalize_email(email: &str) -> Option<String> {
+    let email = email.trim().to_lowercase();
+    let (local, domain) = email.split_once('@')?;
+    let valid = !local.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !domain.contains('@')
+        && email.len() <= 254
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control());
+    valid.then_some(email)
 }
 
 /// Appends a row to the event log. Failures are logged, not returned: an
@@ -125,14 +98,233 @@ pub async fn log_event(pool: &PgPool, user_id: Option<i64>, kind: &str, detail: 
     }
 }
 
-pub async fn create_user(pool: &PgPool, username: &str, password: &str) -> Result<i64, String> {
-    let hash = hash_password(password)?;
-    sqlx::query_scalar("INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id")
-        .bind(username)
-        .bind(hash)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| e.to_string())
+#[derive(Debug)]
+pub enum InviteError {
+    InvalidEmail,
+    AlreadyInvited,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for InviteError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
+/// Lets an email address sign up. A disabled user with that address is
+/// enabled again. Returns the user id and the normalised address.
+pub async fn invite(
+    pool: &PgPool,
+    email: &str,
+    invited_by: Option<i64>,
+) -> Result<(i64, String), InviteError> {
+    let email = normalize_email(email).ok_or(InviteError::InvalidEmail)?;
+    let id: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO users (email, invited_by) VALUES ($1, $2)
+         ON CONFLICT (email) DO UPDATE SET disabled_at = NULL, invited_by = $2
+             WHERE users.disabled_at IS NOT NULL
+         RETURNING id",
+    )
+    .bind(&email)
+    .bind(invited_by)
+    .fetch_optional(pool)
+    .await?;
+    let id = id.ok_or(InviteError::AlreadyInvited)?;
+    log_event(pool, invited_by.or(Some(id)), "user.invited", &email).await;
+    Ok((id, email))
+}
+
+/// A user as listed in Settings.
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct UserInfo {
+    pub id: i64,
+    pub email: String,
+    pub invited_by: Option<String>,
+    /// When the user signed up; empty while the invitation is pending.
+    pub activated_at: Option<DateTime<Utc>>,
+    pub passkeys: i64,
+}
+
+pub async fn list_users(pool: &PgPool) -> Result<Vec<UserInfo>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT u.id, u.email, i.email AS invited_by, u.activated_at,
+                (SELECT count(*) FROM passkeys p WHERE p.user_id = u.id) AS passkeys
+         FROM users u LEFT JOIN users i ON i.id = u.invited_by
+         WHERE u.disabled_at IS NULL
+         ORDER BY u.email",
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// Disables a user and closes their sessions. Returns false if there is
+/// no such enabled user.
+pub async fn disable_user(pool: &PgPool, user_id: i64) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let disabled =
+        sqlx::query("UPDATE users SET disabled_at = now() WHERE id = $1 AND disabled_at IS NULL")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected()
+            == 1;
+    sqlx::query("UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(disabled)
+}
+
+/// Sends a sign-in code to `email` if it belongs to an enabled user.
+///
+/// The caller learns nothing either way: unknown addresses and requests
+/// over the limits are silently ignored, so the answer does not reveal
+/// who has an account.
+pub async fn request_code(state: &AppState, email: &str) -> Result<(), sqlx::Error> {
+    let Some(email) = normalize_email(email) else {
+        return Ok(());
+    };
+    let user: Option<(i64, i64, bool)> = sqlx::query_as(
+        "SELECT u.id,
+                count(c.id) FILTER (WHERE c.created_at > now() - interval '1 hour'),
+                coalesce(bool_or(c.created_at > now() - make_interval(secs => $2)), false)
+         FROM users u LEFT JOIN login_codes c ON c.user_id = u.id
+         WHERE u.email = $1 AND u.disabled_at IS NULL
+         GROUP BY u.id",
+    )
+    .bind(&email)
+    .bind(CODE_INTERVAL_SECONDS as f64)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((user_id, sent_last_hour, sent_just_now)) = user else {
+        return Ok(());
+    };
+    if sent_last_hour >= CODES_PER_HOUR || sent_just_now {
+        log_event(&state.pool, Some(user_id), "session.code_limited", "").await;
+        return Ok(());
+    }
+    let code = new_code();
+    sqlx::query(
+        "INSERT INTO login_codes (user_id, code_hash, expires_at)
+         VALUES ($1, $2, now() + make_interval(mins => $3))",
+    )
+    .bind(user_id)
+    .bind(code_hash(user_id, &code))
+    .bind(CODE_MINUTES as i32)
+    .execute(&state.pool)
+    .await?;
+    state
+        .mailer
+        .dispatch(mail::sign_in_code(&email, &code, CODE_MINUTES));
+    log_event(&state.pool, Some(user_id), "session.code_sent", "").await;
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LoginError {
+    InvalidCode,
+    Internal,
+}
+
+impl From<sqlx::Error> for LoginError {
+    fn from(error: sqlx::Error) -> Self {
+        eprintln!("database error: {error}");
+        Self::Internal
+    }
+}
+
+/// A session just opened.
+#[derive(Debug)]
+pub struct SignedIn {
+    pub token: String,
+    pub user_id: i64,
+    pub email: String,
+    /// True when this sign-in is the user's sign-up.
+    pub first_sign_in: bool,
+}
+
+/// Checks a sign-in code and opens a session.
+///
+/// Only the latest code of the user counts, and only while it is unused,
+/// unexpired and has guesses left. Every guess is counted before the code
+/// is compared, so parallel requests cannot try more than
+/// [`CODE_ATTEMPTS`] codes.
+pub async fn sign_in_with_code(
+    state: &AppState,
+    email: &str,
+    code: &str,
+    user_agent: &str,
+) -> Result<SignedIn, LoginError> {
+    let email = normalize_email(email).ok_or(LoginError::InvalidCode)?;
+    let latest: Option<(i64, i64, String)> = sqlx::query_as(
+        "SELECT c.id, c.user_id, c.code_hash
+         FROM login_codes c JOIN users u ON u.id = c.user_id
+         WHERE u.email = $1 AND u.disabled_at IS NULL
+         ORDER BY c.created_at DESC, c.id DESC
+         LIMIT 1",
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((code_id, user_id, stored_hash)) = latest else {
+        return Err(LoginError::InvalidCode);
+    };
+    let counted = sqlx::query(
+        "UPDATE login_codes SET attempts = attempts + 1
+         WHERE id = $1 AND attempts < $2 AND used_at IS NULL AND expires_at > now()",
+    )
+    .bind(code_id)
+    .bind(CODE_ATTEMPTS)
+    .execute(&state.pool)
+    .await?
+    .rows_affected()
+        == 1;
+    let matches = code_hash(user_id, code.trim()) == stored_hash;
+    if !counted || !matches {
+        log_event(&state.pool, Some(user_id), "session.code_failed", "").await;
+        return Err(LoginError::InvalidCode);
+    }
+    let used =
+        sqlx::query("UPDATE login_codes SET used_at = now() WHERE id = $1 AND used_at IS NULL")
+            .bind(code_id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected()
+            == 1;
+    if !used {
+        return Err(LoginError::InvalidCode);
+    }
+    open_session(&state.pool, user_id, email, user_agent, "code").await
+}
+
+/// Opens a session for a user that has just proved who they are, and
+/// marks the user as signed up if this is their first time.
+pub async fn open_session(
+    pool: &PgPool,
+    user_id: i64,
+    email: String,
+    user_agent: &str,
+    method: &str,
+) -> Result<SignedIn, LoginError> {
+    let first_sign_in =
+        sqlx::query("UPDATE users SET activated_at = now() WHERE id = $1 AND activated_at IS NULL")
+            .bind(user_id)
+            .execute(pool)
+            .await?
+            .rows_affected()
+            == 1;
+    if first_sign_in {
+        log_event(pool, Some(user_id), "user.signed_up", &email).await;
+    }
+    let token = create_session(pool, user_id, user_agent).await?;
+    log_event(pool, Some(user_id), "session.opened", method).await;
+    Ok(SignedIn {
+        token,
+        user_id,
+        email,
+        first_sign_in,
+    })
 }
 
 /// Inserts a session for a user and returns its token.
@@ -153,65 +345,6 @@ pub async fn create_session(
     .execute(pool)
     .await?;
     Ok(token)
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum LoginError {
-    InvalidCredentials,
-    TooManyAttempts,
-    Internal,
-}
-
-/// Checks the credentials and opens a session. Returns its token.
-pub async fn login(
-    state: &AppState,
-    username: &str,
-    password: &str,
-    user_agent: &str,
-) -> Result<String, LoginError> {
-    let username = username.trim().to_lowercase();
-    if state.throttle.blocked(&username) {
-        return Err(LoginError::TooManyAttempts);
-    }
-    let user: Option<(i64, String)> = sqlx::query_as(
-        "SELECT id, password_hash FROM users WHERE username = $1 AND disabled_at IS NULL",
-    )
-    .bind(&username)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|_| LoginError::Internal)?;
-
-    // An unknown user costs the same time as a wrong password.
-    static DUMMY_HASH: OnceLock<String> = OnceLock::new();
-    let dummy = || {
-        DUMMY_HASH
-            .get_or_init(|| hash_password("dummy password for timing").unwrap_or_default())
-            .clone()
-    };
-    let (user_id, hash) = match &user {
-        Some((id, hash)) => (Some(*id), hash.clone()),
-        None => (None, dummy()),
-    };
-    let password = password.to_owned();
-    let valid = tokio::task::spawn_blocking(move || verify_password(&password, &hash))
-        .await
-        .unwrap_or(false);
-
-    match user_id.filter(|_| valid) {
-        Some(user_id) => {
-            state.throttle.clear(&username);
-            let token = create_session(&state.pool, user_id, user_agent)
-                .await
-                .map_err(|_| LoginError::Internal)?;
-            log_event(&state.pool, Some(user_id), "session.opened", "").await;
-            Ok(token)
-        }
-        None => {
-            state.throttle.record_failure(&username);
-            log_event(&state.pool, user_id, "session.login_failed", &username).await;
-            Err(LoginError::InvalidCredentials)
-        }
-    }
 }
 
 pub async fn revoke_session(pool: &PgPool, session_id: i64) -> Result<(), sqlx::Error> {
@@ -236,7 +369,7 @@ fn session_token(headers: &HeaderMap) -> Option<&str> {
 pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Option<CurrentUser> {
     let token = session_token(headers)?;
     let row: Option<(i64, String, i64)> = sqlx::query_as(
-        "SELECT u.id, u.username, s.id
+        "SELECT u.id, u.email, s.id
          FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
            AND u.disabled_at IS NULL",
@@ -245,9 +378,9 @@ pub async fn authenticate(pool: &PgPool, headers: &HeaderMap) -> Option<CurrentU
     .fetch_optional(pool)
     .await
     .ok()?;
-    row.map(|(id, username, session_id)| CurrentUser {
+    row.map(|(id, email, session_id)| CurrentUser {
         id,
-        username,
+        email,
         session_id,
     })
 }
@@ -319,13 +452,32 @@ mod tests {
     use axum::http::HeaderValue;
 
     #[test]
-    fn passwords_hash_and_verify() {
-        assert!(hash_password("short").is_err());
-        let hash = hash_password("correct horse battery").unwrap();
-        assert!(hash.starts_with("$argon2id$"));
-        assert!(verify_password("correct horse battery", &hash));
-        assert!(!verify_password("wrong horse battery", &hash));
-        assert!(!verify_password("anything", "not a hash"));
+    fn codes_have_six_digits() {
+        for _ in 0..100 {
+            let code = new_code();
+            assert_eq!(code.len(), 6);
+            assert!(code.chars().all(|c| c.is_ascii_digit()));
+        }
+        assert_ne!(code_hash(1, "123456"), code_hash(2, "123456"));
+    }
+
+    #[test]
+    fn emails_are_normalised() {
+        assert_eq!(
+            normalize_email("  Ana.Garcia@Example.ES ").as_deref(),
+            Some("ana.garcia@example.es")
+        );
+        for invalid in [
+            "",
+            "ana",
+            "@example.es",
+            "ana@",
+            "ana@example",
+            "a b@example.es",
+        ] {
+            assert_eq!(normalize_email(invalid), None, "{invalid}");
+        }
+        assert_eq!(normalize_email("ana@example.es@x.es"), None);
     }
 
     #[test]
@@ -361,19 +513,6 @@ mod tests {
             ("host", "app.example"),
         ];
         assert!(!csrf_check(&Method::DELETE, &headers(&cross)));
-    }
-
-    #[test]
-    fn throttle_blocks_after_repeated_failures() {
-        let throttle = LoginThrottle::default();
-        for _ in 0..MAX_FAILED_LOGINS {
-            assert!(!throttle.blocked("ana"));
-            throttle.record_failure("ana");
-        }
-        assert!(throttle.blocked("ana"));
-        assert!(!throttle.blocked("luis"));
-        throttle.clear("ana");
-        assert!(!throttle.blocked("ana"));
     }
 
     #[test]

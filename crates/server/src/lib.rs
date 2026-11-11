@@ -6,6 +6,8 @@ pub mod auth;
 pub mod certificate;
 pub mod config;
 pub mod directory;
+pub mod mail;
+pub mod passkeys;
 pub mod security;
 pub mod store;
 pub mod submission;
@@ -15,6 +17,7 @@ use std::{path::Path, sync::Arc};
 use axum::{middleware, routing::get, Router};
 use sqlx::PgPool;
 use tower_http::services::ServeDir;
+use webauthn_rs::Webauthn;
 
 use crate::config::Config;
 
@@ -26,7 +29,9 @@ pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
 pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
-    pub throttle: Arc<auth::LoginThrottle>,
+    pub mailer: Arc<mail::Mailer>,
+    /// Passkey settings, derived from `config.public_url`.
+    pub webauthn: Arc<Webauthn>,
     /// Present when sending records to the AEAT is enabled.
     pub submitter: Option<Arc<submission::Submitter>>,
 }

@@ -1,6 +1,11 @@
 #![allow(dead_code)]
 
-use std::{path::PathBuf, sync::Arc};
+pub mod authenticator;
+
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
     body::Body,
@@ -16,9 +21,11 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use vericounts_core::qr::AeatEnvironment;
 use vericounts_server::{
-    config::{Config, Issuer},
+    config::{self, Config, Issuer},
+    mail::{Mail, Mailer},
     AppState,
 };
+use webauthn_rs::prelude::Url;
 
 pub const ISSUER_NIF: &str = "B12345674";
 
@@ -70,21 +77,33 @@ pub async fn seed(pool: &PgPool) {
     .unwrap();
 }
 
-pub const USERNAME: &str = "tester";
-pub const PASSWORD: &str = "a long test password";
+pub const EMAIL: &str = "tester@example.com";
+
+/// Where the test application is served; passkeys are bound to it.
+pub const PUBLIC_URL: &str = "https://books.example.com";
 
 /// Token of the session that `app` opens and `request` sends.
 const TEST_TOKEN: &str = "test-session-token";
 
-pub fn state(pool: PgPool) -> AppState {
-    AppState {
+/// The application state, and the emails it sends.
+pub fn state_with_outbox(pool: PgPool) -> (AppState, Arc<Mutex<Vec<Mail>>>) {
+    let public_url = Url::parse(PUBLIC_URL).unwrap();
+    let (mailer, outbox) = Mailer::memory();
+    let state = AppState {
         pool,
+        webauthn: Arc::new(config::webauthn(&public_url).unwrap()),
         config: Arc::new(Config {
             aeat_environment: AeatEnvironment::Test,
+            public_url,
         }),
-        throttle: Arc::default(),
+        mailer: Arc::new(mailer),
         submitter: None,
-    }
+    };
+    (state, outbox)
+}
+
+pub fn state(pool: PgPool) -> AppState {
+    state_with_outbox(pool).0
 }
 
 /// The application without any user or session.
@@ -95,9 +114,9 @@ pub fn app_signed_out(pool: PgPool) -> Router {
 /// Creates a user with an open session; `request` sends its cookie.
 pub async fn sign_in(pool: &PgPool) {
     let user_id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (username, password_hash) VALUES ($1, 'unused') RETURNING id",
+        "INSERT INTO users (email, activated_at) VALUES ($1, now()) RETURNING id",
     )
-    .bind(USERNAME)
+    .bind(EMAIL)
     .fetch_one(pool)
     .await
     .unwrap();

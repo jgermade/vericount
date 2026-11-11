@@ -1,4 +1,4 @@
-use std::{env, fs, io, sync::Arc, time::Duration};
+use std::{env, fs, sync::Arc, time::Duration};
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
@@ -8,18 +8,20 @@ use vericounts_server::{
     auth, certificate,
     config::{self, Config, Startup},
     directory,
+    mail::Mailer,
     store::StoreError,
     submission::{self, RunOutcome, Submitter},
     AppState, MIGRATOR,
 };
 
-const USAGE: &str = "usage: vericounts-server [serve|migrate|create-user <username>]
+const USAGE: &str = "usage: vericounts-server [serve|migrate|invite <email>]
 
-  serve        Run the HTTP server (default). DATABASE_URL should use a
-               role that is a member of vericounts_app.
-  migrate      Apply the database migrations and exit. DATABASE_URL must
-               use the role that owns the schema.
-  create-user  Create a user. The password is read from standard input.";
+  serve    Run the HTTP server (default). DATABASE_URL should use a role
+           that is a member of vericounts_app.
+  migrate  Apply the database migrations and exit. DATABASE_URL must use
+           the role that owns the schema.
+  invite   Let an email address sign up, e.g. the first user. They sign
+           up in the web client with a code sent to that address.";
 
 type AnyError = Box<dyn std::error::Error>;
 
@@ -30,7 +32,7 @@ async fn main() -> Result<(), AnyError> {
     match (command.as_str(), args.next()) {
         ("serve", None) => serve().await,
         ("migrate", None) => migrate().await,
-        ("create-user", Some(username)) => create_user(&username).await,
+        ("invite", Some(email)) => invite(&email).await,
         _ => Err(USAGE.into()),
     }
 }
@@ -51,14 +53,20 @@ async fn migrate() -> Result<(), AnyError> {
     Ok(())
 }
 
-async fn create_user(username: &str) -> Result<(), AnyError> {
+async fn invite(email: &str) -> Result<(), AnyError> {
     let (_, pool) = connect(1).await?;
-    eprintln!("password for {username}:");
-    let mut password = String::new();
-    io::stdin().read_line(&mut password)?;
-    let password = password.trim_end_matches(['\r', '\n']);
-    auth::create_user(&pool, username, password).await?;
-    println!("user {username} created");
+    let config = Config::from_env()?;
+    let (_, email) = auth::invite(&pool, email, None)
+        .await
+        .map_err(|error| match error {
+            auth::InviteError::InvalidEmail => format!("{email:?} is not an email address"),
+            auth::InviteError::AlreadyInvited => format!("{email} can already sign in"),
+            auth::InviteError::Database(error) => error.to_string(),
+        })?;
+    println!(
+        "{email} can sign up at {}: a code will be sent to that address",
+        config.public_url
+    );
     Ok(())
 }
 
@@ -137,10 +145,17 @@ async fn serve() -> Result<(), AnyError> {
     let (startup, pool) = connect(10).await?;
     let config = Config::from_env()?;
     let submitter = submitter(&config)?;
+    let mailer = Mailer::from_env(config.aeat_environment)?;
+    if matches!(mailer, Mailer::Log) {
+        eprintln!("SMTP is not configured: emails, sign-in codes included, go to standard error");
+    }
+    let webauthn = config::webauthn(&config.public_url)?;
+    println!("passkeys for {}", config.public_url);
     let state = AppState {
         pool,
         config: Arc::new(config),
-        throttle: Arc::default(),
+        mailer: Arc::new(mailer),
+        webauthn: Arc::new(webauthn),
         submitter: submitter.clone(),
     };
     if let Some(submitter) = submitter {

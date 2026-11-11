@@ -1,26 +1,27 @@
-<script :setup="{ api, t, describeError }: Props" lang="ts">
+<script :setup="{ api, t, describeError, webauthn }: Props" lang="ts">
   import type { Api, ApiError } from "./api"
   import type { Texts } from "./i18n/es"
-  import type { Shell } from "./types"
+  import type { Session, Shell } from "./types"
+  import type { WebAuthn } from "./webauthn"
 
   interface Props {
     api: Api
     t: Texts
     describeError: (t: Texts, error: unknown) => string
+    webauthn: WebAuthn
   }
 
   type View = "loading" | "sign-in" | "home" | "invoices" | "contacts" | "settings"
 
+  const SignIn = await import("./SignIn.html")
   const Home = await import("./Home.html")
   const Invoices = await import("./Invoices.html")
   const Contacts = await import("./Contacts.html")
   const Settings = await import("./Settings.html")
 
   let view: View = "loading"
-  let username = ""
-  let credentials = { username: "", password: "" }
+  let email = ""
   let error = ""
-  let busy = false
 
   // Given to every screen: how to report an error and how to clear it.
   const shell: Shell = {
@@ -41,18 +42,10 @@
     view = next
   }
   const signedIn = () => ["home", "invoices", "contacts", "settings"].includes(view)
-  const signIn = async () => {
-    busy = true
-    error = ""
-    try {
-      username = (await api.signIn(credentials.username, credentials.password)).username
-      credentials = { username: "", password: "" }
-      view = "home"
-    } catch (e) {
-      error = describeError(t, e)
-    } finally {
-      busy = false
-    }
+  // Called by the sign-in screen.
+  const done = (session: Session) => {
+    email = session.email
+    go("home")
   }
   const signOut = async () => {
     try {
@@ -61,13 +54,13 @@
       shell.fail(e)
       return
     }
-    username = ""
+    email = ""
     go("sign-in")
   }
 
   await $mounted()
   try {
-    username = (await api.session()).username
+    email = (await api.session()).email
     view = "home"
   } catch {
     view = "sign-in"
@@ -76,30 +69,16 @@
 
 <header class="bar">
   <h1>{{ t.appName }}</h1>
-  <button :if="username && view !== 'sign-in'" @click="signOut">{{ t.signOut }}</button>
+  <button :if="email && view !== 'sign-in'" @click="signOut">{{ t.signOut }}</button>
 </header>
 
 <p :if="error" class="error" role="alert">{{ error }}</p>
 
-<main :if="view === 'sign-in'">
-  <h2>{{ t.signIn.title }}</h2>
-  <form @submit.prevent="signIn">
-    <label>{{ t.signIn.username }}
-      <input required autocomplete="username" autocapitalize="none" :value="credentials.username"
-        @input="credentials.username = $event.target.value">
-    </label>
-    <label>{{ t.signIn.password }}
-      <input required type="password" autocomplete="current-password" :value="credentials.password"
-        @input="credentials.password = $event.target.value">
-    </label>
-    <button type="submit" class="primary" :disabled="busy">{{ t.signIn.submit }}</button>
-  </form>
-</main>
-
+<main :if="view === 'sign-in'"><SignIn :api :t :shell :webauthn :done /></main>
 <main :if="view === 'home'"><Home :api :t :shell /></main>
 <main :if="view === 'invoices'"><Invoices :api :t :shell /></main>
 <main :if="view === 'contacts'"><Contacts :api :t :shell /></main>
-<main :if="view === 'settings'"><Settings :api :t :shell /></main>
+<main :if="view === 'settings'"><Settings :api :t :shell :webauthn /></main>
 
 <nav :if="signedIn()" class="tabs">
   <button :class.on="view === 'home'" @click="go('home')">{{ t.nav.home }}</button>

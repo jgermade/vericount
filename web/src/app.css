@@ -387,3 +387,8 @@ td.num {
   border-color: var(--muted);
   color: var(--muted);
 }
+
+/* "or" between the two ways of signing in. */
+.separator {
+  margin: 1rem 0 0.5rem;
+}

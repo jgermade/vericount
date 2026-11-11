@@ -30,8 +30,16 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # SMTP server that keeps what it receives, for the sign-in code test.
+      mailpit:
+        image: axllent/mailpit:v1.33.1
+        ports:
+          - 1025:1025
+          - 8025:8025
     env:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+      VERICOUNTS_TEST_SMTP_URL: smtp://127.0.0.1:1025
+      VERICOUNTS_TEST_MAILPIT_URL: http://127.0.0.1:8025
     steps:
       - uses: actions/checkout@v4
       - name: Install xmllint, used to validate XML against the AEAT schemas
