@@ -5,15 +5,6 @@ use std::{env, net::SocketAddr};
 use vericount_core::{aeat::Party, invoice, qr::AeatEnvironment};
 use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
-/// The company that issues the invoices, as stored in the `company` table.
-#[derive(Debug, Clone)]
-pub struct Issuer {
-    pub nif: String,
-    pub name: String,
-    /// One-line address, printed on invoices.
-    pub address: String,
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub aeat_environment: AeatEnvironment,

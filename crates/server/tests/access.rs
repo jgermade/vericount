@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use vericount_server::{
-    auth,
+    access::{sessions, users},
     mail::{Mail, Mailer},
     AppState,
 };
@@ -171,7 +171,7 @@ async fn events(pool: &PgPool) -> Vec<String> {
 #[sqlx::test]
 async fn invited_users_sign_up_and_sign_in_with_a_code(pool: PgPool) {
     common::seed(&pool).await;
-    auth::invite(&pool, "  Tester@Example.com ", None)
+    users::invite(&pool, "  Tester@Example.com ", None)
         .await
         .unwrap();
     let test = TestApp::signed_out(pool.clone());
@@ -234,7 +234,7 @@ async fn invited_users_sign_up_and_sign_in_with_a_code(pool: PgPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(stored, auth::token_hash(token));
+    assert_eq!(stored, sessions::token_hash(token));
 
     let reply = send(&test.app, Method::GET, "/api/invoices", &session, None).await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -277,8 +277,10 @@ async fn invited_users_sign_up_and_sign_in_with_a_code(pool: PgPool) {
 
 #[sqlx::test]
 async fn nobody_else_gets_a_code_and_the_answer_does_not_tell(pool: PgPool) {
-    let (user_id, _) = auth::invite(&pool, EMAIL, None).await.unwrap();
-    auth::invite(&pool, "gone@example.com", None).await.unwrap();
+    let (user_id, _) = users::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, "gone@example.com", None)
+        .await
+        .unwrap();
     sqlx::query("UPDATE users SET disabled_at = now() WHERE email = 'gone@example.com'")
         .execute(&pool)
         .await
@@ -309,7 +311,7 @@ async fn nobody_else_gets_a_code_and_the_answer_does_not_tell(pool: PgPool) {
 
 #[sqlx::test]
 async fn codes_expire_run_out_of_guesses_and_are_replaced(pool: PgPool) {
-    auth::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, EMAIL, None).await.unwrap();
     let test = TestApp::signed_out(pool.clone());
 
     // Expired.
@@ -325,7 +327,7 @@ async fn codes_expire_run_out_of_guesses_and_are_replaced(pool: PgPool) {
     test.request_code(EMAIL).await;
     let code = test.last_code();
     let wrong = if code == "000000" { "111111" } else { "000000" };
-    for _ in 0..auth::CODE_ATTEMPTS {
+    for _ in 0..sessions::CODE_ATTEMPTS {
         assert_eq!(
             test.sign_in(EMAIL, wrong).await.status,
             StatusCode::UNAUTHORIZED
@@ -357,23 +359,23 @@ async fn codes_expire_run_out_of_guesses_and_are_replaced(pool: PgPool) {
 
 #[sqlx::test]
 async fn codes_are_sent_at_most_once_a_minute_and_five_an_hour(pool: PgPool) {
-    auth::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, EMAIL, None).await.unwrap();
     let test = TestApp::signed_out(pool.clone());
 
     test.request_code(EMAIL).await;
     assert_eq!(test.request_code(EMAIL).await, StatusCode::ACCEPTED);
     assert_eq!(test.mails().len(), 1, "a second code within a minute");
 
-    for _ in 1..auth::CODES_PER_HOUR {
+    for _ in 1..sessions::CODES_PER_HOUR {
         age_codes(&pool, 61).await;
         test.request_code(EMAIL).await;
     }
-    assert_eq!(test.mails().len(), auth::CODES_PER_HOUR as usize);
+    assert_eq!(test.mails().len(), sessions::CODES_PER_HOUR as usize);
     age_codes(&pool, 61).await;
     test.request_code(EMAIL).await;
     assert_eq!(
         test.mails().len(),
-        auth::CODES_PER_HOUR as usize,
+        sessions::CODES_PER_HOUR as usize,
         "over the hourly limit"
     );
     assert!(events(&pool)
@@ -383,7 +385,7 @@ async fn codes_are_sent_at_most_once_a_minute_and_five_an_hour(pool: PgPool) {
 
 #[sqlx::test]
 async fn state_changing_requests_need_the_csrf_header_and_origin(pool: PgPool) {
-    auth::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, EMAIL, None).await.unwrap();
     let test = TestApp::signed_out(pool);
     let body = Some(json!({ "email": EMAIL }));
 
@@ -433,9 +435,11 @@ async fn state_changing_requests_need_the_csrf_header_and_origin(pool: PgPool) {
 #[sqlx::test]
 async fn expired_revoked_and_disabled_sessions_are_refused(pool: PgPool) {
     common::seed(&pool).await;
-    let (user_id, _) = auth::invite(&pool, EMAIL, None).await.unwrap();
+    let (user_id, _) = users::invite(&pool, EMAIL, None).await.unwrap();
     let app = common::app_signed_out(pool.clone());
-    let token = auth::create_session(&pool, user_id, "test").await.unwrap();
+    let token = sessions::create_session(&pool, user_id, "test")
+        .await
+        .unwrap();
     let cookie = format!("__Host-session={token}");
     let session = [(COOKIE.as_str(), cookie.as_str())];
     let status = || async {
@@ -456,13 +460,13 @@ async fn expired_revoked_and_disabled_sessions_are_refused(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(status().await, StatusCode::OK);
-    assert!(auth::disable_user(&pool, user_id).await.unwrap());
+    assert!(users::disable_user(&pool, user_id).await.unwrap());
     assert_eq!(status().await, StatusCode::UNAUTHORIZED);
 }
 
 #[sqlx::test]
 async fn signed_in_users_invite_and_remove_others(pool: PgPool) {
-    auth::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, EMAIL, None).await.unwrap();
     let test = TestApp::signed_out(pool.clone());
     let cookie = test.signed_in_cookie(EMAIL).await;
     let session = [(COOKIE.as_str(), cookie.as_str())];
@@ -568,7 +572,7 @@ async fn passkey_sign_in(test: &TestApp, passkey: &mut SoftPasskey) -> Reply {
 
 #[sqlx::test]
 async fn passkeys_are_registered_and_open_sessions(pool: PgPool) {
-    auth::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, EMAIL, None).await.unwrap();
     let test = TestApp::signed_out(pool.clone());
     let cookie = test.signed_in_cookie(EMAIL).await;
     let mut passkey = register_passkey(&test, &cookie).await;
@@ -651,8 +655,8 @@ async fn passkeys_are_registered_and_open_sessions(pool: PgPool) {
 
 #[sqlx::test]
 async fn passkeys_of_disabled_users_and_other_users_ceremonies_are_refused(pool: PgPool) {
-    let (user_id, _) = auth::invite(&pool, EMAIL, None).await.unwrap();
-    auth::invite(&pool, "ana@example.com", None).await.unwrap();
+    let (user_id, _) = users::invite(&pool, EMAIL, None).await.unwrap();
+    users::invite(&pool, "ana@example.com", None).await.unwrap();
     let test = TestApp::signed_out(pool.clone());
     let cookie = test.signed_in_cookie(EMAIL).await;
     let mut passkey = register_passkey(&test, &cookie).await;
@@ -680,7 +684,7 @@ async fn passkeys_of_disabled_users_and_other_users_ceremonies_are_refused(pool:
     .await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
 
-    auth::disable_user(&pool, user_id).await.unwrap();
+    users::disable_user(&pool, user_id).await.unwrap();
     let reply = passkey_sign_in(&test, &mut passkey).await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
 }
@@ -701,8 +705,11 @@ async fn codes_go_through_smtp(pool: PgPool) {
         return;
     };
     // A fresh address, so earlier runs against the same Mailpit do not count.
-    let email = format!("smtp-{}@example.com", auth::new_token().get(..12).unwrap());
-    auth::invite(&pool, &email, None).await.unwrap();
+    let email = format!(
+        "smtp-{}@example.com",
+        sessions::new_token().get(..12).unwrap()
+    );
+    users::invite(&pool, &email, None).await.unwrap();
     let (mut state, _) = common::state_with_outbox(pool);
     state.mailer = Arc::new(Mailer::smtp(&smtp_url, "vericount <no-reply@example.com>").unwrap());
     let test = TestApp::new(state, Arc::default());

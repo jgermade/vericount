@@ -6,7 +6,7 @@ use axum::http::{Method, StatusCode};
 use common::{get, post, request};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use vericount_server::store;
+use vericount_server::invoices::store;
 
 async fn put(app: &axum::Router, path: &str, body: Value) -> common::TestResponse {
     request(app, Method::PUT, path, Some(body)).await

@@ -17,7 +17,8 @@ use webauthn_rs::prelude::{
 };
 
 use crate::{
-    auth::{self, CurrentUser, SignedIn},
+    access::sessions::{self, CurrentUser, SignedIn},
+    events::log_event,
     AppState,
 };
 
@@ -46,8 +47,8 @@ impl From<sqlx::Error> for PasskeyError {
     }
 }
 
-impl From<auth::LoginError> for PasskeyError {
-    fn from(_: auth::LoginError) -> Self {
+impl From<sessions::LoginError> for PasskeyError {
+    fn from(_: sessions::LoginError) -> Self {
         Self::Internal
     }
 }
@@ -182,7 +183,7 @@ pub async fn finish_registration(
     .fetch_optional(&state.pool)
     .await?;
     let info = info.ok_or(PasskeyError::AlreadyRegistered)?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "passkey.added",
@@ -222,7 +223,7 @@ pub async fn remove(pool: &PgPool, user_id: i64, id: i64) -> Result<(), PasskeyE
     if !removed {
         return Err(PasskeyError::NotFound);
     }
-    auth::log_event(pool, Some(user_id), "passkey.removed", &id.to_string()).await;
+    log_event(pool, Some(user_id), "passkey.removed", &id.to_string()).await;
     Ok(())
 }
 
@@ -302,5 +303,5 @@ pub async fn finish_sign_in(
         .bind(Json(&passkey))
         .execute(&state.pool)
         .await?;
-    Ok(auth::open_session(&state.pool, user_id, email, user_agent, "passkey").await?)
+    Ok(sessions::open_session(&state.pool, user_id, email, user_agent, "passkey").await?)
 }

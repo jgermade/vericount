@@ -14,10 +14,14 @@ use vericount_core::aeat::{
 };
 
 use crate::{
-    aeat_client::{AeatClient, SubmitError},
-    certificate::CertificateInfo,
-    config::Issuer,
-    store::{self, StoreError},
+    aeat::{
+        certificate::CertificateInfo,
+        client::{AeatClient, SubmitError},
+        service::{self, AeatService},
+    },
+    company::store::Issuer,
+    error::StoreError,
+    invoices::store,
 };
 
 /// State of a record with respect to the AEAT.
@@ -417,7 +421,7 @@ pub struct QueueStatus {
 pub async fn queue_status(
     pool: &PgPool,
     issuer_nif: &str,
-    service: &crate::aeat_service::AeatService,
+    service: &AeatService,
 ) -> Result<QueueStatus, StoreError> {
     let live = store::is_live(pool).await?;
     let states = record_states(pool, issuer_nif, live).await?;
@@ -431,7 +435,7 @@ pub async fn queue_status(
     .bind(live)
     .fetch_optional(pool)
     .await?;
-    let certificate = crate::aeat_service::certificate_info(pool).await?;
+    let certificate = service::certificate_info(pool).await?;
     let mut live_blockers = Vec::new();
     if !live {
         match &certificate {

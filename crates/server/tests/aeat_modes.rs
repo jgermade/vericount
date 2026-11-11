@@ -20,9 +20,13 @@ use sqlx::PgPool;
 use vericount_aeat_mock::{Mock, SERVICE_PATH};
 use vericount_core::aeat::Party;
 use vericount_server::{
-    aeat_service::{self, AeatService},
+    aeat::{
+        service::{self as aeat_service, AeatService},
+        submission,
+    },
+    company,
     config::{AeatSettings, SecretKey},
-    directory, submission, AppState,
+    AppState,
 };
 
 const KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
@@ -121,7 +125,7 @@ async fn app(pool: &PgPool, settings: AeatSettings) -> (AppState, Router) {
 }
 
 async fn send(state: &AppState) -> String {
-    let issuer = directory::issuer(&state.pool).await.unwrap();
+    let issuer = company::store::issuer(&state.pool).await.unwrap();
     let submitter = state.aeat.current().expect("records are being sent");
     match submission::run_once(&state.pool, &issuer, &submitter)
         .await

@@ -1,9 +1,9 @@
-//! Users, sign-in codes, sessions and request authentication.
+//! Sign-in codes, sessions and request authentication.
 //!
-//! There are no passwords. Users are invited by email address; they sign
-//! up and sign in with a one-time code sent to that address, or with a
-//! passkey (see [`crate::passkeys`]). Signing up is the first sign-in of
-//! an invited user.
+//! There are no passwords. Users are invited by email address (see
+//! [`crate::access::users`]); they sign up and sign in with a one-time code
+//! sent to that address, or with a passkey (see [`crate::access::passkeys`]).
+//! Signing up is the first sign-in of an invited user.
 //!
 //! A session is a random token kept in an `HttpOnly`, `Secure`,
 //! `SameSite=Strict` cookie; only its SHA-256 is stored. Requests that
@@ -19,12 +19,10 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, Utc};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-use crate::{api::ApiError, mail, AppState};
+use crate::{api::ApiError, events::log_event, mail, AppState};
 
 pub const SESSION_COOKIE: &str = "__Host-session";
 pub const CSRF_HEADER: &str = "x-csrf-protection";
@@ -82,98 +80,6 @@ pub fn normalize_email(email: &str) -> Option<String> {
         && email.len() <= 254
         && !email.chars().any(|c| c.is_whitespace() || c.is_control());
     valid.then_some(email)
-}
-
-/// Appends a row to the event log. Failures are logged, not returned: an
-/// event must never make the action it describes fail halfway.
-pub async fn log_event(pool: &PgPool, user_id: Option<i64>, kind: &str, detail: &str) {
-    let result = sqlx::query("INSERT INTO events (user_id, kind, detail) VALUES ($1, $2, $3)")
-        .bind(user_id)
-        .bind(kind)
-        .bind(detail)
-        .execute(pool)
-        .await;
-    if let Err(error) = result {
-        eprintln!("cannot log event {kind}: {error}");
-    }
-}
-
-#[derive(Debug)]
-pub enum InviteError {
-    InvalidEmail,
-    AlreadyInvited,
-    Database(sqlx::Error),
-}
-
-impl From<sqlx::Error> for InviteError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Database(error)
-    }
-}
-
-/// Lets an email address sign up. A disabled user with that address is
-/// enabled again. Returns the user id and the normalised address.
-pub async fn invite(
-    pool: &PgPool,
-    email: &str,
-    invited_by: Option<i64>,
-) -> Result<(i64, String), InviteError> {
-    let email = normalize_email(email).ok_or(InviteError::InvalidEmail)?;
-    let id: Option<i64> = sqlx::query_scalar(
-        "INSERT INTO users (email, invited_by) VALUES ($1, $2)
-         ON CONFLICT (email) DO UPDATE SET disabled_at = NULL, invited_by = $2
-             WHERE users.disabled_at IS NOT NULL
-         RETURNING id",
-    )
-    .bind(&email)
-    .bind(invited_by)
-    .fetch_optional(pool)
-    .await?;
-    let id = id.ok_or(InviteError::AlreadyInvited)?;
-    log_event(pool, invited_by.or(Some(id)), "user.invited", &email).await;
-    Ok((id, email))
-}
-
-/// A user as listed in Settings.
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct UserInfo {
-    pub id: i64,
-    pub email: String,
-    pub invited_by: Option<String>,
-    /// When the user signed up; empty while the invitation is pending.
-    pub activated_at: Option<DateTime<Utc>>,
-    pub passkeys: i64,
-}
-
-pub async fn list_users(pool: &PgPool) -> Result<Vec<UserInfo>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT u.id, u.email, i.email AS invited_by, u.activated_at,
-                (SELECT count(*) FROM passkeys p WHERE p.user_id = u.id) AS passkeys
-         FROM users u LEFT JOIN users i ON i.id = u.invited_by
-         WHERE u.disabled_at IS NULL
-         ORDER BY u.email",
-    )
-    .fetch_all(pool)
-    .await
-}
-
-/// Disables a user and closes their sessions. Returns false if there is
-/// no such enabled user.
-pub async fn disable_user(pool: &PgPool, user_id: i64) -> Result<bool, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-    let disabled =
-        sqlx::query("UPDATE users SET disabled_at = now() WHERE id = $1 AND disabled_at IS NULL")
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected()
-            == 1;
-    sqlx::query("UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(disabled)
 }
 
 /// Sends a sign-in code to `email` if it belongs to an enabled user.

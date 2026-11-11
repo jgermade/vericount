@@ -3,13 +3,15 @@ use std::{env, sync::Arc, time::Duration};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
 use vericount_server::{
-    aeat_service::{self, AeatService},
-    auth,
+    access::users,
+    aeat::{
+        service::{self as aeat_service, AeatService},
+        submission::{self, RunOutcome},
+    },
+    company,
     config::{self, AeatSettings, Config, Startup},
-    directory,
+    error::StoreError,
     mail::Mailer,
-    store::StoreError,
-    submission::{self, RunOutcome},
     AppState, MIGRATOR,
 };
 
@@ -92,12 +94,12 @@ async fn healthcheck() -> Result<(), AnyError> {
 async fn invite(email: &str) -> Result<(), AnyError> {
     let (_, pool) = connect(1).await?;
     let config = Config::from_env()?;
-    let (_, email) = auth::invite(&pool, email, None)
+    let (_, email) = users::invite(&pool, email, None)
         .await
         .map_err(|error| match error {
-            auth::InviteError::InvalidEmail => format!("{email:?} is not an email address"),
-            auth::InviteError::AlreadyInvited => format!("{email} can already sign in"),
-            auth::InviteError::Database(error) => error.to_string(),
+            users::InviteError::InvalidEmail => format!("{email:?} is not an email address"),
+            users::InviteError::AlreadyInvited => format!("{email} can already sign in"),
+            users::InviteError::Database(error) => error.to_string(),
         })?;
     println!(
         "{email} can sign up at {}: a code will be sent to that address",
@@ -117,7 +119,7 @@ async fn submission_loop(state: AppState) {
             tokio::time::sleep(Duration::from_secs(MIN_WAIT)).await;
             continue;
         };
-        let outcome = match directory::issuer(&state.pool).await {
+        let outcome = match company::store::issuer(&state.pool).await {
             Ok(issuer) => submission::run_once(&state.pool, &issuer, &submitter).await,
             Err(error) => Err(error),
         };

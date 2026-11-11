@@ -24,11 +24,14 @@ use vericount_aeat_mock::{Mock, SERVICE_PATH};
 use vericount_core::aeat::{Party, SoftwareSystem};
 
 use crate::{
-    aeat_client::AeatClient,
-    certificate::{self, CertificateInfo},
+    aeat::{
+        certificate::{self, CertificateInfo},
+        client::AeatClient,
+        submission::{self, RecordState, Submitter},
+    },
     config::{AeatSettings, SecretKey},
-    store::{self, StoreError},
-    submission::{self, RecordState, Submitter},
+    error::StoreError,
+    invoices::store,
 };
 
 /// Additional data bound to the encrypted certificate.

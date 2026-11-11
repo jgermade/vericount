@@ -23,15 +23,22 @@ use vericount_core::{
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
 use crate::{
-    aeat_service::{self, CertificateError},
-    auth::{self, CurrentUser, LoginError},
-    certificate::CertificateInfo,
-    directory::{self, Company, Contact, ContactInput, NewSeries, Series, SeriesUpdate},
-    mail,
-    passkeys::{self, PasskeyError},
-    store::{self, ChainReport, InvoiceDetail, InvoiceSummary, NewInvoice, StoreError},
-    submission::{self, LiveBlocker, QueueStatus, RunOutcome},
-    AppState,
+    access::{
+        passkeys::{self, PasskeyError},
+        sessions::{self as auth, CurrentUser, LoginError},
+        users,
+    },
+    aeat::{
+        certificate::CertificateInfo,
+        service::{self as aeat_service, CertificateError},
+        submission::{self, LiveBlocker, QueueStatus, RunOutcome},
+    },
+    company::store::{self as directory, Company, NewSeries, Series, SeriesUpdate},
+    contacts::store::{self as contacts, Contact, ContactInput},
+    error::StoreError,
+    events::log_event,
+    invoices::store::{self, ChainReport, InvoiceDetail, InvoiceSummary, NewInvoice},
+    mail, AppState,
 };
 
 pub fn router(state: AppState) -> Router<AppState> {
@@ -262,7 +269,7 @@ async fn create_invoice(
         now(),
     )
     .await?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "invoice.issued",
@@ -302,7 +309,7 @@ async fn cancel_invoice(
         now(),
     )
     .await?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "invoice.cancelled",
@@ -428,7 +435,7 @@ async fn close_session(State(state): State<AppState>, headers: HeaderMap) -> Res
         if let Err(error) = auth::revoke_session(&state.pool, user.session_id).await {
             eprintln!("database error: {error}");
         }
-        auth::log_event(&state.pool, Some(user.id), "session.closed", "").await;
+        log_event(&state.pool, Some(user.id), "session.closed", "").await;
     }
     (
         StatusCode::NO_CONTENT,
@@ -543,8 +550,8 @@ struct Invitation {
     email: String,
 }
 
-async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<auth::UserInfo>>, ApiError> {
-    Ok(Json(auth::list_users(&state.pool).await?))
+async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<users::UserInfo>>, ApiError> {
+    Ok(Json(users::list_users(&state.pool).await?))
 }
 
 /// Lets someone sign up with their email address, and tells them so.
@@ -554,21 +561,21 @@ async fn invite_user(
     body: Result<Json<Invitation>, JsonRejection>,
 ) -> Result<StatusCode, ApiError> {
     let Json(body) = body?;
-    let (_, email) = auth::invite(&state.pool, &body.email, Some(user.id))
+    let (_, email) = users::invite(&state.pool, &body.email, Some(user.id))
         .await
         .map_err(|error| match error {
-            auth::InviteError::InvalidEmail => ApiError {
+            users::InviteError::InvalidEmail => ApiError {
                 status: StatusCode::UNPROCESSABLE_ENTITY,
                 code: "validation",
                 message: "invalid email address".to_owned(),
                 field: Some("email".to_owned()),
             },
-            auth::InviteError::AlreadyInvited => ApiError::new(
+            users::InviteError::AlreadyInvited => ApiError::new(
                 StatusCode::CONFLICT,
                 "user_exists",
                 "this address can already sign in",
             ),
-            auth::InviteError::Database(error) => error.into(),
+            users::InviteError::Database(error) => error.into(),
         })?;
     state.mailer.dispatch(mail::invitation(
         &email,
@@ -590,10 +597,10 @@ async fn disable_user(
             "you cannot remove your own access",
         ));
     }
-    if !auth::disable_user(&state.pool, id).await? {
+    if !users::disable_user(&state.pool, id).await? {
         return Err(StoreError::NotFound.into());
     }
-    auth::log_event(&state.pool, Some(user.id), "user.disabled", &id.to_string()).await;
+    log_event(&state.pool, Some(user.id), "user.disabled", &id.to_string()).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -626,7 +633,7 @@ async fn submit_now(
         &submitter,
     )
     .await?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "aeat.submission_requested",
@@ -696,7 +703,7 @@ async fn upload_certificate(
         ),
         CertificateError::Database(error) => StoreError::Database(error).into(),
     })?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "aeat.certificate_uploaded",
@@ -714,7 +721,7 @@ async fn remove_certificate(
     if !aeat_service::remove_certificate(&state.pool).await? {
         return Err(StoreError::NotFound.into());
     }
-    auth::log_event(&state.pool, Some(user.id), "aeat.certificate_removed", "").await;
+    log_event(&state.pool, Some(user.id), "aeat.certificate_removed", "").await;
     reload_aeat(&state).await;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -751,7 +758,7 @@ async fn activate_live_mode(
         return Err(ApiError::new(StatusCode::CONFLICT, code, message));
     }
     store::activate_live_mode(&state.pool, &issuer.nif, user.id).await?;
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "aeat.live_mode_activated",
@@ -778,7 +785,7 @@ async fn put_company(
 ) -> Result<Json<Company>, ApiError> {
     let Json(body) = body?;
     let company = directory::save_company(&state.pool, body).await?;
-    auth::log_event(&state.pool, Some(user.id), "company.saved", &company.nif).await;
+    log_event(&state.pool, Some(user.id), "company.saved", &company.nif).await;
     Ok(Json(company))
 }
 
@@ -793,7 +800,7 @@ async fn create_series(
 ) -> Result<(StatusCode, Json<Series>), ApiError> {
     let Json(body) = body?;
     let series = directory::create_series(&state.pool, body).await?;
-    auth::log_event(&state.pool, Some(user.id), "series.created", &series.code).await;
+    log_event(&state.pool, Some(user.id), "series.created", &series.code).await;
     Ok((StatusCode::CREATED, Json(series)))
 }
 
@@ -805,19 +812,19 @@ async fn update_series(
 ) -> Result<Json<Series>, ApiError> {
     let Json(body) = body?;
     let series = directory::update_series(&state.pool, &code, body).await?;
-    auth::log_event(&state.pool, Some(user.id), "series.updated", &series.code).await;
+    log_event(&state.pool, Some(user.id), "series.updated", &series.code).await;
     Ok(Json(series))
 }
 
 async fn list_contacts(State(state): State<AppState>) -> Result<Json<Vec<Contact>>, ApiError> {
-    Ok(Json(directory::list_contacts(&state.pool).await?))
+    Ok(Json(contacts::list_contacts(&state.pool).await?))
 }
 
 async fn get_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<Contact>, ApiError> {
-    Ok(Json(directory::get_contact(&state.pool, id).await?))
+    Ok(Json(contacts::get_contact(&state.pool, id).await?))
 }
 
 async fn create_contact(
@@ -826,9 +833,9 @@ async fn create_contact(
     body: Result<Json<ContactInput>, JsonRejection>,
 ) -> Result<(StatusCode, Json<Contact>), ApiError> {
     let Json(body) = body?;
-    let contact = directory::create_contact(&state.pool, body).await?;
+    let contact = contacts::create_contact(&state.pool, body).await?;
     let id = contact.id.to_string();
-    auth::log_event(&state.pool, Some(user.id), "contact.created", &id).await;
+    log_event(&state.pool, Some(user.id), "contact.created", &id).await;
     Ok((StatusCode::CREATED, Json(contact)))
 }
 
@@ -839,8 +846,8 @@ async fn update_contact(
     body: Result<Json<ContactInput>, JsonRejection>,
 ) -> Result<Json<Contact>, ApiError> {
     let Json(body) = body?;
-    let contact = directory::update_contact(&state.pool, id, body).await?;
-    auth::log_event(
+    let contact = contacts::update_contact(&state.pool, id, body).await?;
+    log_event(
         &state.pool,
         Some(user.id),
         "contact.updated",
@@ -911,7 +918,7 @@ async fn correct_invoice(
     let issuer = directory::issuer(&state.pool).await?;
     store::correct_rejected_record(&state.pool, &issuer, id, now()).await?;
     let detail = id.to_string();
-    auth::log_event(
+    log_event(
         &state.pool,
         Some(user.id),
         "invoice.record_corrected",

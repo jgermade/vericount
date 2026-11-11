@@ -19,36 +19,13 @@ use vericount_core::{
 };
 
 use crate::{
-    config::Issuer,
-    submission::{self, RecordResult, RecordState},
+    aeat::submission::{self, RecordResult, RecordState},
+    company::store::{full_address, Issuer},
+    error::StoreError,
 };
 
 /// Only standard invoices ("F1") are supported for now.
 pub const INVOICE_TYPE: &str = "F1";
-
-#[derive(Debug)]
-pub enum StoreError {
-    Validation(ValidationError),
-    NotFound,
-    AlreadyCancelled,
-    /// The company data has not been entered yet.
-    CompanyMissing,
-    /// The request conflicts with existing data: (code, message).
-    Conflict(&'static str, &'static str),
-    Database(sqlx::Error),
-}
-
-impl From<sqlx::Error> for StoreError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Database(error)
-    }
-}
-
-impl From<ValidationError> for StoreError {
-    fn from(error: ValidationError) -> Self {
-        Self::Validation(error)
-    }
-}
 
 /// A validated invoice, ready to be stored.
 #[derive(Debug, Clone)]
@@ -234,7 +211,7 @@ pub async fn create_invoice(
     let Some((recipient_name, recipient_nif, address, postal_code, city)) = contact else {
         return Err(ValidationError::new("contact_id", "is not an active customer").into());
     };
-    let recipient_address = crate::directory::full_address(&address, &postal_code, &city);
+    let recipient_address = full_address(&address, &postal_code, &city);
 
     let (last_number, last_date): (Option<i32>, Option<NaiveDate>) = sqlx::query_as(
         "SELECT max(number), max(issue_date) FROM invoices

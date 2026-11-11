@@ -16,8 +16,8 @@ use vericount_core::aeat::{
     self, Operation, Party, Record, RecordStatus, ResponseError, SoftwareSystem, SubmissionStatus,
 };
 use vericount_server::{
-    aeat_client::{AeatClient, SubmitError},
-    store,
+    aeat::client::{AeatClient, SubmitError},
+    invoices::store,
 };
 
 fn invoice_body() -> Value {
@@ -220,7 +220,7 @@ mod worker {
     use std::sync::Arc;
 
     use super::*;
-    use vericount_server::submission::{self, RunOutcome, Submitter};
+    use vericount_server::aeat::submission::{self, RunOutcome, Submitter};
 
     async fn submitter() -> (Mock, Submitter) {
         let (mock, client) = start_mock().await;
@@ -449,7 +449,7 @@ mod worker {
 #[sqlx::test]
 async fn a_representative_is_declared(pool: PgPool) {
     use std::sync::Arc;
-    use vericount_server::submission::Submitter;
+    use vericount_server::aeat::submission::Submitter;
 
     common::sign_in(&pool).await;
     common::seed(&pool).await;
