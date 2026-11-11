@@ -1,0 +1,114 @@
+<script :setup="{ api, t, shell }: Props" lang="ts">
+  // Settings of the AEAT sending: the mode, the certificate, and turning
+  // live mode on. Shown once the company exists.
+  import type { Api, ApiError } from "../app/api"
+  import type { Shell } from "../app/types"
+  import type { Texts } from "../i18n/es"
+  import type { AeatQueue } from "./types"
+
+  interface Props { api: Api; t: Texts; shell: Shell }
+
+  const day = (timestamp: string) => timestamp.slice(0, 10).split("-").reverse().join("/")
+  let aeat: AeatQueue | null = null
+  let busy = false
+  let certificateFile: File | null = null
+  let certificatePassword = ""
+  let certificateNotice = ""
+  let confirmingLive = false
+
+  const run = async (action: () => Promise<void>) => {
+    busy = true
+    certificateNotice = ""
+    shell.clear()
+    try {
+      await action()
+    } catch (e) {
+      shell.fail(e)
+    } finally {
+      busy = false
+    }
+  }
+
+  const load = () => run(async () => {
+    try {
+      aeat = await api.aeatQueue()
+    } catch (e) {
+      // Only available once the company exists.
+      if ((e as ApiError).code !== "company_missing") throw e
+    }
+  })
+  const pickCertificate = (event: Event) => {
+    const files = (event.target as HTMLInputElement).files
+    certificateFile = files && files.length ? files[0] : null
+  }
+  const uploadCertificate = (form: HTMLFormElement) => run(async () => {
+    if (!certificateFile) return
+    await api.uploadCertificate(certificateFile, certificatePassword)
+    certificateFile = null
+    certificatePassword = ""
+    form.reset()
+    aeat = await api.aeatQueue()
+    certificateNotice = t.settings.certificateUploaded
+  })
+  const removeCertificate = () => run(async () => {
+    await api.removeCertificate()
+    aeat = await api.aeatQueue()
+  })
+  const goLive = () => run(async () => {
+    aeat = await api.goLive()
+    confirmingLive = false
+  })
+
+  await $mounted()
+  load()
+</script>
+
+<section :if="aeat" class="card">
+  <h3>{{ t.settings.aeatTitle }}</h3>
+  <p :if="aeat.mode === 'practice'" class="notice practice">{{ t.settings.practiceMode }}</p>
+  <p :else>{{ t.settings.liveMode(aeat.aeat_environment) }}</p>
+  <p :if="aeat.mode === 'live' && !aeat.enabled" class="error" role="alert">{{ t.settings.aeatStopped }}</p>
+  <p :if="aeat.representative_nif" class="muted">{{ t.settings.representative(aeat.representative_nif) }}</p>
+
+  <h4>{{ t.settings.certificateTitle }}</h4>
+  <p class="muted">{{ t.settings.certificateHelp }}</p>
+  <div :if="aeat.certificate">
+    <p>
+      {{ t.settings.certificate(aeat.certificate.subject, aeat.certificate.nif || "?") }}
+      {{ t.settings.certificateExpires(day(aeat.certificate.expires_at)) }}
+    </p>
+    <p :if="aeat.certificate_matches_company" class="muted">{{ t.settings.certificateOwn }}</p>
+    <p :else class="notice">{{ t.settings.certificateOther }}</p>
+    <button :disabled="busy" @click="removeCertificate">{{ t.settings.removeCertificate }}</button>
+  </div>
+  <p :else class="muted">{{ t.settings.noCertificate }}</p>
+  <form :if="aeat.certificate_upload" @submit.prevent="uploadCertificate($event.target)">
+    <label>{{ t.settings.certificateFile }}
+      <input required type="file" accept=".p12,.pfx,.pem,application/x-pkcs12" @change="pickCertificate($event)">
+    </label>
+    <label>{{ t.settings.certificatePassword }}
+      <input type="password" autocomplete="off" :value="certificatePassword"
+        @input="certificatePassword = $event.target.value">
+    </label>
+    <button type="submit" :disabled="busy">
+      {{ aeat.certificate ? t.settings.replaceCertificate : t.settings.uploadCertificate }}
+    </button>
+    <span :if="certificateNotice" class="muted" role="status">{{ certificateNotice }}</span>
+  </form>
+  <p :else class="notice">{{ t.settings.certificateUploadUnavailable }}</p>
+
+  <div :if="aeat.mode === 'practice'">
+    <h4>{{ t.settings.liveTitle }}</h4>
+    <p class="muted">{{ t.settings.liveHelp }}</p>
+    <ul :if="aeat.live_blockers.length">
+      <li :each="blocker in aeat.live_blockers" :key="blocker">{{ t.settings.liveBlocker[blocker] }}</li>
+    </ul>
+    <button :if="!confirmingLive" class="primary" :disabled="busy || aeat.live_blockers.length > 0"
+      @click="confirmingLive = true">{{ t.settings.goLive }}</button>
+    <div :if="confirmingLive" class="notice" role="alert">
+      <p>{{ t.settings.confirmGoLive }}</p>
+      <button class="danger" :disabled="busy" @click="goLive">{{ t.settings.confirmGoLiveButton }}</button>
+      <button :disabled="busy" @click="confirmingLive = false">{{ t.settings.keepPractising }}</button>
+    </div>
+  </div>
+</section>
