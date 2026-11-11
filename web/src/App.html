@@ -1,0 +1,236 @@
+<script :setup="{ api }">
+  const VAT_RATES = ["21", "10", "4"]
+  const money = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" })
+  // Amounts are decimal strings; they are only turned into numbers to be shown.
+  const eur = amount => money.format(Number(amount))
+  const shortHash = hash => (hash ? `${hash.slice(0, 12)}…` : "(first record)")
+
+  const emptyLine = () => ({ description: "", quantity: "1", unit_price: "", vat_rate: "21" })
+  const emptyForm = () => ({
+    series: `A${new Date().getFullYear()}`,
+    recipient_name: "",
+    recipient_nif: "",
+    description: "",
+    lines: [emptyLine()],
+  })
+
+  let view = "list"
+  let invoices = []
+  let invoice = null
+  let form = emptyForm()
+  let preview = null
+  let chain = null
+  let error = ""
+  let busy = false
+
+  const run = async action => {
+    busy = true
+    error = ""
+    try {
+      await action()
+    } catch (e) {
+      error = e.field ? `${e.field}: ${e.message}` : e.message
+    } finally {
+      busy = false
+    }
+  }
+
+  const payload = () => ({
+    series: form.series.trim().toUpperCase(),
+    recipient: { name: form.recipient_name, nif: form.recipient_nif },
+    description: form.description,
+    lines: form.lines.map(line => ({
+      description: line.description,
+      quantity: line.quantity.trim().replace(",", "."),
+      unit_price: line.unit_price.trim().replace(",", "."),
+      vat_rate: line.vat_rate,
+    })),
+  })
+
+  const showList = () => run(async () => {
+    view = "list"
+    invoices = await api.listInvoices()
+    chain = await api.verifyChain()
+  })
+  const showNew = () => {
+    error = ""
+    preview = null
+    view = "new"
+  }
+  const showInvoice = id => run(async () => {
+    invoice = await api.getInvoice(id)
+    view = "detail"
+  })
+  const addLine = () => {
+    form.lines = [...form.lines, emptyLine()]
+    preview = null
+  }
+  const removeLine = index => {
+    form.lines = form.lines.filter((_, i) => i !== index)
+    preview = null
+  }
+  const setField = (target, name, value) => {
+    target[name] = value
+    preview = null
+  }
+  const review = () => run(async () => {
+    preview = await api.previewInvoice(payload())
+  })
+  const issue = () => run(async () => {
+    invoice = await api.createInvoice(payload())
+    form = emptyForm()
+    preview = null
+    view = "detail"
+  })
+  const cancel = () => {
+    if (!window.confirm(`Cancel invoice ${invoice.series_number}? This cannot be undone.`)) return
+    run(async () => {
+      invoice = await api.cancelInvoice(invoice.id)
+    })
+  }
+
+  await $mounted()
+  showList()
+</script>
+
+<header class="bar">
+  <h1>vericounts</h1>
+  <button :if="view === 'list'" class="primary" @click="showNew">New invoice</button>
+  <button :else @click="showList">Back</button>
+</header>
+
+<p :if="error" class="error" role="alert">{{ error }}</p>
+
+<main :if="view === 'list'">
+  <p :if="chain && !chain.valid" class="error" role="alert">
+    The record chain is broken at record {{ chain.error.record_id }}: {{ chain.error.reason }}.
+  </p>
+  <p :elseif="chain" class="muted">{{ chain.records }} records, chain verified.</p>
+
+  <p :if="!invoices.length && !busy" class="muted">No invoices yet.</p>
+  <ul class="list">
+    <li :each="item in invoices" :key="item.id">
+      <button class="row" @click="showInvoice(item.id)">
+        <span>
+          <strong>{{ item.series_number }}</strong>
+          <span :if="item.cancelled" class="tag">cancelled</span>
+          <br>
+          <span class="muted">{{ item.issue_date }} · {{ item.recipient_name }}</span>
+        </span>
+        <span class="amount">{{ eur(item.total_amount) }}</span>
+      </button>
+    </li>
+  </ul>
+</main>
+
+<main :elseif="view === 'new'">
+  <h2>New invoice</h2>
+  <form @submit.prevent="review">
+    <label>Series
+      <input required maxlength="20" :value="form.series"
+        @input="setField(form, 'series', $event.target.value)">
+    </label>
+    <label>Customer name
+      <input required :value="form.recipient_name"
+        @input="setField(form, 'recipient_name', $event.target.value)">
+    </label>
+    <label>Customer NIF
+      <input required maxlength="20" :value="form.recipient_nif"
+        @input="setField(form, 'recipient_nif', $event.target.value)">
+    </label>
+    <label>Description of the operation
+      <input required :value="form.description"
+        @input="setField(form, 'description', $event.target.value)">
+    </label>
+
+    <fieldset :each="line, index in form.lines">
+      <legend>Line {{ index + 1 }}</legend>
+      <label>Description
+        <input required :value="line.description"
+          @input="setField(line, 'description', $event.target.value)">
+      </label>
+      <div class="columns">
+        <label>Quantity
+          <input required inputmode="decimal" :value="line.quantity"
+            @input="setField(line, 'quantity', $event.target.value)">
+        </label>
+        <label>Unit price
+          <input required inputmode="decimal" :value="line.unit_price"
+            @input="setField(line, 'unit_price', $event.target.value)">
+        </label>
+        <label>VAT %
+          <select :value="line.vat_rate" @change="setField(line, 'vat_rate', $event.target.value)">
+            <option :each="rate in VAT_RATES" :value="rate">{{ rate }}</option>
+          </select>
+        </label>
+      </div>
+      <button :if="form.lines.length > 1" type="button" @click="removeLine(index)">Remove line</button>
+    </fieldset>
+
+    <div class="actions">
+      <button type="button" @click="addLine">Add line</button>
+      <button type="submit" :disabled="busy">Review</button>
+    </div>
+  </form>
+
+  <section :if="preview" class="card">
+    <h3>Review before issuing</h3>
+    <dl class="totals">
+      <dt>Base</dt><dd>{{ eur(preview.total_base) }}</dd>
+      <div :each="tax in preview.taxes" class="pair">
+        <dt>VAT {{ tax.vat_rate }} % on {{ eur(tax.base_amount) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
+      </div>
+      <dt><strong>Total</strong></dt><dd><strong>{{ eur(preview.total_amount) }}</strong></dd>
+    </dl>
+    <p class="muted">An issued invoice cannot be edited or deleted, only cancelled.</p>
+    <button class="primary" :disabled="busy" @click="issue">Issue invoice</button>
+  </section>
+</main>
+
+<main :elseif="invoice">
+  <h2>
+    Invoice {{ invoice.series_number }}
+    <span :if="invoice.cancelled" class="tag">cancelled</span>
+  </h2>
+  <dl class="fields">
+    <dt>Date</dt><dd>{{ invoice.issue_date }}</dd>
+    <dt>Issuer</dt><dd>{{ invoice.issuer_name }} ({{ invoice.issuer_nif }})</dd>
+    <dt>Customer</dt><dd>{{ invoice.recipient_name }} ({{ invoice.recipient_nif }})</dd>
+    <dt>Description</dt><dd>{{ invoice.description }}</dd>
+  </dl>
+
+  <ul class="list">
+    <li :each="line in invoice.lines" class="row">
+      <span>
+        {{ line.description }}<br>
+        <span class="muted">{{ line.quantity }} × {{ line.unit_price }} € · VAT {{ line.vat_rate }} %</span>
+      </span>
+      <span class="amount">{{ eur(line.base_amount) }}</span>
+    </li>
+  </ul>
+
+  <dl class="totals">
+    <dt>Base</dt><dd>{{ eur(invoice.total_base) }}</dd>
+    <div :each="tax in invoice.taxes" class="pair">
+      <dt>VAT {{ tax.vat_rate }} % on {{ eur(tax.base_amount) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
+    </div>
+    <dt><strong>Total</strong></dt><dd><strong>{{ eur(invoice.total_amount) }}</strong></dd>
+  </dl>
+
+  <section class="card">
+    <h3>Veri*factu records</h3>
+    <ul class="list">
+      <li :each="record in invoice.records" :key="record.id">
+        <strong>{{ record.record_type }}</strong>
+        <span class="muted">{{ record.generated_at }}</span><br>
+        <code :title="record.hash">{{ shortHash(record.hash) }}</code>
+        <span class="muted">after</span>
+        <code :title="record.previous_hash">{{ shortHash(record.previous_hash) }}</code>
+      </li>
+    </ul>
+    <p><a :href="invoice.qr_url" rel="noopener noreferrer" target="_blank">Check at the AEAT (QR link)</a></p>
+    <p class="muted">Records are not sent to the AEAT yet.</p>
+  </section>
+
+  <button :if="!invoice.cancelled" class="danger" :disabled="busy" @click="cancel">Cancel invoice</button>
+</main>

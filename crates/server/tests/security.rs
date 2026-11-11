@@ -82,6 +82,10 @@ async fn security_headers_are_set_on_every_response() {
 }
 
 fn html_files(dir: PathBuf, out: &mut Vec<PathBuf>) {
+    if dir.is_file() {
+        out.push(dir);
+        return;
+    }
     for entry in fs::read_dir(dir).unwrap() {
         let path = entry.unwrap().path();
         if path.is_dir() {
@@ -128,7 +132,10 @@ fn inline_violations(html: &str) -> Vec<String> {
 fn web_client_has_no_inline_code() {
     let mut files = Vec::new();
     html_files(web_dir(), &mut files);
-    assert!(!files.is_empty(), "no HTML files found in web/");
+    for path in common::web_client_dirs() {
+        html_files(path, &mut files);
+    }
+    assert!(files.len() >= 2, "web client HTML not found: {files:?}");
     for file in files {
         let violations = inline_violations(&fs::read_to_string(&file).unwrap());
         assert!(violations.is_empty(), "{}: {violations:?}", file.display());

@@ -17,9 +17,9 @@ use axum::{
 ///
 /// - No `unsafe-inline` and no `unsafe-eval`: scripts and styles are only
 ///   loaded from same-origin files.
-/// - Trusted Types are enforced and no policy may be created yet. When the
-///   UI needs to insert HTML, allow a single named policy here and keep the
-///   sanitization in that one place.
+/// - Trusted Types are enforced. Only the `default` policy may be created;
+///   the web client defines it in `web/src/trusted-types.js`, because jq79
+///   has no named policy of its own.
 pub const CONTENT_SECURITY_POLICY_VALUE: &str = "default-src 'none'; \
     script-src 'self'; \
     style-src 'self'; \
@@ -31,7 +31,7 @@ pub const CONTENT_SECURITY_POLICY_VALUE: &str = "default-src 'none'; \
     form-action 'self'; \
     frame-ancestors 'none'; \
     require-trusted-types-for 'script'; \
-    trusted-types 'none'";
+    trusted-types default";
 
 const STATIC_HEADERS: [(HeaderName, &str); 8] = [
     (CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY_VALUE),

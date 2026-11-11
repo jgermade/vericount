@@ -9,9 +9,10 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::{Europe::Madrid, Tz};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use vericounts_core::{
-    invoice::{self, LineInput},
+    invoice::{self, Line, LineInput, TaxBreakdown},
     qr,
 };
 
@@ -23,6 +24,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/invoices", get(list_invoices).post(create_invoice))
+        .route("/invoices/preview", post(preview_invoice))
         .route("/invoices/{id}", get(get_invoice))
         .route("/invoices/{id}/cancellation", post(cancel_invoice))
         .route("/chain/verification", get(verify_chain))
@@ -68,17 +70,13 @@ impl IntoResponse for ApiError {
             message: &self.message,
             field: self.field.as_deref(),
         };
-        (self.status, Json(serde_json_error(&body))).into_response()
+        (self.status, Json(ErrorEnvelope { error: &body })).into_response()
     }
 }
 
 #[derive(Serialize)]
 struct ErrorEnvelope<'a> {
     error: &'a ErrorBody<'a>,
-}
-
-fn serde_json_error<'a>(body: &'a ErrorBody<'a>) -> ErrorEnvelope<'a> {
-    ErrorEnvelope { error: body }
 }
 
 impl From<StoreError> for ApiError {
@@ -159,19 +157,53 @@ async fn invoice_response(state: &AppState, id: i64) -> Result<InvoiceResponse, 
     Ok(InvoiceResponse { detail, qr_url })
 }
 
+impl CreateInvoice {
+    fn validate(self) -> Result<NewInvoice, invoice::ValidationError> {
+        Ok(NewInvoice {
+            series: invoice::validate_series(&self.series)?,
+            issue_date: self.issue_date,
+            recipient_name: invoice::validate_text("recipient.name", &self.recipient.name)?,
+            recipient_nif: invoice::validate_tax_id("recipient.nif", &self.recipient.nif)?,
+            description: invoice::validate_text("description", &self.description)?,
+            totals: invoice::compute_totals(&self.lines)?,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct PreviewResponse {
+    lines: Vec<Line>,
+    taxes: Vec<TaxBreakdown>,
+    #[serde(with = "rust_decimal::serde::str")]
+    total_base: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    total_tax: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    total_amount: Decimal,
+}
+
+/// Validates an invoice and returns its totals without storing anything,
+/// so the user can review them before issuing: issuing cannot be undone.
+async fn preview_invoice(
+    body: Result<Json<CreateInvoice>, JsonRejection>,
+) -> Result<Json<PreviewResponse>, ApiError> {
+    let Json(body) = body?;
+    let totals = body.validate()?.totals;
+    Ok(Json(PreviewResponse {
+        lines: totals.lines,
+        taxes: totals.taxes,
+        total_base: totals.total_base,
+        total_tax: totals.total_tax,
+        total_amount: totals.total_amount,
+    }))
+}
+
 async fn create_invoice(
     State(state): State<AppState>,
     body: Result<Json<CreateInvoice>, JsonRejection>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), ApiError> {
     let Json(body) = body?;
-    let new = NewInvoice {
-        series: invoice::validate_series(&body.series)?,
-        issue_date: body.issue_date,
-        recipient_name: invoice::validate_text("recipient.name", &body.recipient.name)?,
-        recipient_nif: invoice::validate_tax_id("recipient.nif", &body.recipient.nif)?,
-        description: invoice::validate_text("description", &body.description)?,
-        totals: invoice::compute_totals(&body.lines)?,
-    };
+    let new = body.validate()?;
     let id = store::create_invoice(&state.pool, &state.config.issuer, &new, now()).await?;
     Ok((
         StatusCode::CREATED,

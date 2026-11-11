@@ -62,7 +62,7 @@ impl Startup {
                 .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
                 .parse()
                 .map_err(|e| format!("VERICOUNTS_ADDR: {e}"))?,
-            web_dir: env::var("VERICOUNTS_WEB_DIR").unwrap_or_else(|_| "web".to_owned()),
+            web_dir: env::var("VERICOUNTS_WEB_DIR").unwrap_or_else(|_| "web/dist".to_owned()),
             database_url: required("DATABASE_URL")?,
         })
     }

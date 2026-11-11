@@ -19,8 +19,18 @@ use vericounts_server::{
 
 pub const ISSUER_NIF: &str = "B12345674";
 
+/// A minimal static site, so these tests do not need the web build.
 pub fn web_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/web")
+}
+
+/// The real web client: its sources and, when present, its build output.
+pub fn web_client_dirs() -> Vec<PathBuf> {
+    let web = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web");
+    [web.join("index.html"), web.join("dist")]
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect()
 }
 
 pub fn issuer() -> Issuer {

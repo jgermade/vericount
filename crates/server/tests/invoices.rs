@@ -110,6 +110,28 @@ async fn creates_invoices_with_chained_records(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn preview_computes_totals_without_storing(pool: PgPool) {
+    let app = common::app(pool.clone());
+    let preview = post(&app, "/api/invoices/preview", invoice_body()).await;
+    assert_eq!(preview.status, StatusCode::OK);
+    let preview = preview.json();
+    assert_eq!(preview["total_amount"], "630.99");
+    assert_eq!(preview["taxes"][0]["base_amount"], "500.00");
+
+    let mut invalid = invoice_body();
+    invalid["recipient"]["nif"] = json!("");
+    let response = post(&app, "/api/invoices/preview", invalid).await;
+    assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(response.json()["error"]["field"], "recipient.nif");
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM invoices")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[sqlx::test]
 async fn cancellation_adds_a_record(pool: PgPool) {
     let app = common::app(pool);
     let invoice = post(&app, "/api/invoices", invoice_body()).await.json();

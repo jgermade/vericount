@@ -1,3 +1,4 @@
+// Fixture for the server tests.
 const status = document.getElementById('status');
 
 try {
