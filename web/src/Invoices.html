@@ -25,7 +25,7 @@
   const emptyLine = (): LineInput => ({ description: "", quantity: "1", unit_price: "", vat_rate: "21" })
   const emptyForm = (): Form => ({ series: "", contact_id: "", description: "", lines: [emptyLine()] })
 
-  let view: "list" | "new" | "detail" = "list"
+  let view: "list" | "new" | "detail" | "document" = "list"
   let invoices: InvoiceSummary[] = []
   let invoice: Invoice | null = null
   let series: Series[] = []
@@ -107,6 +107,8 @@
     invoice = await api.cancelInvoice(current.id)
     confirmingCancel = false
   })
+
+  const print = () => window.print()
 
   await $mounted()
   showList()
@@ -265,6 +267,8 @@
     <p><a :href="invoice.qr_url" rel="noopener noreferrer" target="_blank">{{ t.detail.qrLink }}</a></p>
   </section>
 
+  <button class="primary wide" @click="view = 'document'">{{ t.print.open }}</button>
+
   <button :if="!invoice.cancelled && !confirmingCancel" class="danger" @click="confirmingCancel = true">
     {{ t.detail.cancel }}
   </button>
@@ -275,4 +279,64 @@
       <button @click="confirmingCancel = false">{{ t.detail.keep }}</button>
     </div>
   </section>
+</section>
+
+<section :elseif="view === 'document' && invoice">
+  <div class="bar no-print">
+    <button class="primary" @click="print">{{ t.print.print }}</button>
+    <button @click="view = 'detail'">{{ t.back }}</button>
+  </div>
+  <article class="document">
+    <header class="document-head">
+      <div>
+        <h2>{{ t.print.invoice }} {{ invoice.series_number }}</h2>
+        <p>{{ t.print.issueDate }}: {{ invoice.issue_date.split("-").reverse().join("/") }}</p>
+        <p :if="invoice.cancelled" class="stamp">{{ t.print.cancelled }}</p>
+      </div>
+      <figure class="qr">
+        <figcaption>{{ t.print.qrLabel }}</figcaption>
+        <img :src="api.qrImageUrl(invoice.id)" :alt="t.print.qrLabel" width="151" height="151">
+        <figcaption>{{ t.print.legend }}<br><strong>{{ t.print.brand }}</strong></figcaption>
+      </figure>
+    </header>
+
+    <div class="parties">
+      <div>
+        <h3>{{ t.print.issuer }}</h3>
+        <p><strong>{{ invoice.issuer_name }}</strong><br>{{ t.print.nif }}: {{ invoice.issuer_nif }}<br>{{ invoice.issuer_address }}</p>
+      </div>
+      <div>
+        <h3>{{ t.print.customer }}</h3>
+        <p><strong>{{ invoice.recipient_name }}</strong><br>{{ t.print.nif }}: {{ invoice.recipient_nif }}<br>{{ invoice.recipient_address }}</p>
+      </div>
+    </div>
+
+    <p>{{ invoice.description }}</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>{{ t.print.concept }}</th><th class="num">{{ t.print.quantity }}</th>
+            <th class="num">{{ t.print.price }}</th><th class="num">{{ t.print.vat }}</th>
+            <th class="num">{{ t.print.amount }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :each="line in invoice.lines">
+            <td>{{ line.description }}</td><td class="num">{{ line.quantity }}</td>
+            <td class="num">{{ line.unit_price }} €</td><td class="num">{{ line.vat_rate }} %</td>
+            <td class="num">{{ eur(line.base_amount) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <dl class="totals">
+      <dt>{{ t.totals.base }}</dt><dd>{{ eur(invoice.total_base) }}</dd>
+      <div :each="tax in invoice.taxes" class="pair">
+        <dt>{{ t.totals.vatOn(tax.vat_rate, eur(tax.base_amount)) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
+      </div>
+      <dt><strong>{{ t.totals.total }}</strong></dt><dd><strong>{{ eur(invoice.total_amount) }}</strong></dd>
+    </dl>
+  </article>
 </section>

@@ -247,7 +247,7 @@ label.check input {
   border-top: 1px solid var(--border);
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   left: 0;
   padding-bottom: env(safe-area-inset-bottom, 0);
   position: fixed;
@@ -268,4 +268,117 @@ label.check input {
 
 .card form {
   margin-top: 1rem;
+}
+
+button.wide {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+.tiles {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.tile {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+}
+
+.tile strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Printable invoice. The QR code is 40 mm wide, within the 30 to 40 mm
+   that the Veri*factu rules ask for. */
+.document {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.document-head,
+.parties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.parties > div {
+  flex: 1 1 12rem;
+}
+
+.qr {
+  font-size: 0.75rem;
+  margin: 0;
+  text-align: center;
+  width: 44mm;
+}
+
+.qr img {
+  background: #fff;
+  display: block;
+  height: 40mm;
+  margin: 0.25rem auto;
+  width: 40mm;
+}
+
+.stamp {
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  display: inline-block;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  text-align: left;
+}
+
+th.num,
+td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    max-width: none;
+    padding: 0;
+  }
+
+  body > #app > header,
+  .tabs,
+  .no-print,
+  .error {
+    display: none;
+  }
+
+  .document {
+    border: 0;
+    padding: 0;
+  }
 }

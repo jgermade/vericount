@@ -151,4 +151,16 @@ export interface Shell {
   /// Shows an API error to the user, or the sign-in screen if the session ended.
   fail: (error: unknown) => void
   clear: () => void
+  /// Opens another screen.
+  go: (screen: "home" | "invoices" | "contacts" | "settings") => void
+}
+
+export interface PeriodSummary extends Totals {
+  year: number
+  quarter: number
+  from: string
+  to: string
+  invoices: number
+  cancelled: number
+  taxes: TaxBreakdown[]
 }

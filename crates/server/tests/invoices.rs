@@ -410,3 +410,65 @@ async fn verification_detects_tampering(pool: PgPool) {
     assert_eq!(report["valid"], false);
     assert_eq!(report["error"]["record_id"], ids[2]);
 }
+
+#[sqlx::test]
+async fn qr_code_is_an_svg_image(pool: PgPool) {
+    let app = common::app(pool).await;
+    let invoice = post(&app, "/api/invoices", invoice_body()).await.json();
+    let response = get(&app, &format!("/api/invoices/{}/qr.svg", invoice["id"])).await;
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.headers["content-type"], "image/svg+xml");
+    let svg = String::from_utf8(response.body).unwrap();
+    assert!(
+        svg.starts_with("<?xml") && svg.contains("<svg"),
+        "{svg:.80}"
+    );
+    // An SVG served from our origin must not be able to run scripts.
+    assert!(response.headers["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .contains("default-src 'none'"));
+    assert!(!svg.contains("<script"));
+    assert_eq!(
+        get(&app, "/api/invoices/999/qr.svg").await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[sqlx::test]
+async fn summary_adds_up_the_quarter_without_cancelled_invoices(pool: PgPool) {
+    use chrono::Datelike;
+    let app = common::app(pool).await;
+    let empty = get(&app, "/api/summary").await.json();
+    assert_eq!(
+        (&empty["invoices"], &empty["total_amount"]),
+        (&json!(0), &json!("0"))
+    );
+
+    let first = post(&app, "/api/invoices", invoice_body()).await.json();
+    post(&app, "/api/invoices", invoice_body()).await;
+    post(&app, "/api/invoices", invoice_body()).await;
+    let path = format!("/api/invoices/{}/cancellation", first["id"]);
+    post(&app, &path, json!({})).await;
+
+    let summary = get(&app, "/api/summary").await.json();
+    assert_eq!(summary["year"], today().year());
+    assert_eq!(summary["quarter"], today().month0() / 3 + 1);
+    assert_eq!(
+        (&summary["invoices"], &summary["cancelled"]),
+        (&json!(2), &json!(1))
+    );
+    assert_eq!(summary["total_base"], "1049.98");
+    assert_eq!(summary["total_tax"], "212.00");
+    assert_eq!(summary["total_amount"], "1261.98");
+    assert_eq!(summary["taxes"][0]["vat_rate"], "21");
+    assert_eq!(summary["taxes"][0]["tax_amount"], "210.00");
+    assert_eq!(summary["taxes"][1]["base_amount"], "49.98");
+
+    let other = get(&app, "/api/summary?year=2001&quarter=4").await.json();
+    assert_eq!(other["from"], "2001-10-01");
+    assert_eq!(other["to"], "2001-12-31");
+    assert_eq!(other["invoices"], 0);
+    let invalid = get(&app, "/api/summary?quarter=5").await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+}

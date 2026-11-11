@@ -12,6 +12,7 @@ import type {
   InvoiceInput,
   InvoicePreview,
   InvoiceSummary,
+  PeriodSummary,
   Series,
   Session,
 } from "./types"
@@ -56,6 +57,9 @@ export const api = {
     request<Session>("POST", "/session", { username, password }),
   signOut: () => request<null>("DELETE", "/session"),
   aeatQueue: () => request<AeatQueue>("GET", "/aeat"),
+  summary: () => request<PeriodSummary>("GET", "/summary"),
+  /// URL of the QR image of an invoice, for an `<img>`.
+  qrImageUrl: (id: number) => `/api/invoices/${id}/qr.svg`,
   company: () => request<Company>("GET", "/company"),
   saveCompany: (company: Company) => request<Company>("PUT", "/company", company),
   listSeries: () => request<Series[]>("GET", "/series"),

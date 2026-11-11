@@ -1,0 +1,56 @@
+<script :setup="{ api, t, shell }: Props" lang="ts">
+  import type { Api } from "./api"
+  import type { Texts } from "./i18n/es"
+  import type { AeatQueue, Amount, ChainReport, PeriodSummary, Shell } from "./types"
+
+  interface Props { api: Api; t: Texts; shell: Shell }
+
+  const money = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" })
+  const eur = (amount: Amount) => money.format(Number(amount))
+
+  let summary: PeriodSummary | null = null
+  let chain: ChainReport | null = null
+  let queue: AeatQueue | null = null
+
+  $: allGood = chain !== null && queue !== null && chain.valid && !queue.pending && !queue.rejected
+
+  await $mounted()
+  try {
+    summary = await api.summary()
+    chain = await api.verifyChain()
+    queue = await api.aeatQueue()
+  } catch (e) {
+    shell.fail(e)
+  }
+</script>
+
+<section :if="summary">
+  <div class="bar">
+    <h2>{{ t.home.quarter(summary.quarter, summary.year) }}</h2>
+    <button class="primary" @click="shell.go('invoices')">{{ t.home.seeInvoices }}</button>
+  </div>
+  <div class="tiles">
+    <div class="tile"><span class="muted">{{ t.home.invoiced }}</span><strong>{{ eur(summary.total_base) }}</strong></div>
+    <div class="tile"><span class="muted">{{ t.home.outputVat }}</span><strong>{{ eur(summary.total_tax) }}</strong></div>
+    <div class="tile"><span class="muted">{{ t.home.issued }}</span><strong>{{ summary.invoices }}</strong></div>
+    <div class="tile"><span class="muted">{{ t.home.cancelled }}</span><strong>{{ summary.cancelled }}</strong></div>
+  </div>
+
+  <dl class="totals">
+    <div :each="tax in summary.taxes" class="pair">
+      <dt>{{ t.totals.vatOn(tax.vat_rate, eur(tax.base_amount)) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
+    </div>
+  </dl>
+
+  <section class="card">
+    <h3>{{ t.home.attention }}</h3>
+    <p :if="allGood" class="muted">{{ t.home.allGood }}</p>
+    <p :if="chain && !chain.valid" class="error" role="alert">{{ t.list.chainBroken(chain.error.record_id) }}</p>
+    <p :if="queue && queue.rejected" class="error" role="alert">{{ t.list.aeatRejected(queue.rejected) }}</p>
+    <p :if="queue && queue.pending" class="notice">
+      {{ t.list.aeatPending(queue.pending) }}
+      <span :if="!queue.enabled">{{ t.list.aeatDisabled }}</span>
+      <span :if="queue.last_error">{{ t.list.aeatLastError(queue.last_error) }}</span>
+    </p>
+  </section>
+</section>

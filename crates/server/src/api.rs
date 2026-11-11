@@ -1,9 +1,9 @@
 //! JSON API.
 
 use axum::{
-    extract::{rejection::JsonRejection, Path, State},
+    extract::{rejection::JsonRejection, Path, Query, State},
     http::{
-        header::{SET_COOKIE, USER_AGENT},
+        header::{CACHE_CONTROL, CONTENT_TYPE, SET_COOKIE, USER_AGENT},
         HeaderMap, StatusCode,
     },
     middleware,
@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post, put},
     Extension, Json, Router,
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use chrono_tz::{Europe::Madrid, Tz};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/invoices/preview", post(preview_invoice))
         .route("/invoices/{id}", get(get_invoice))
         .route("/invoices/{id}/cancellation", post(cancel_invoice))
+        .route("/invoices/{id}/qr.svg", get(invoice_qr))
+        .route("/summary", get(summary))
         .route("/chain/verification", get(verify_chain))
         .route("/company", get(get_company).put(put_company))
         .route("/series", get(list_series).post(create_series))
@@ -498,4 +500,55 @@ async fn update_contact(
     )
     .await;
     Ok(Json(contact))
+}
+
+/// QR code of an invoice as an SVG image. It encodes the AEAT validation
+/// URL, with error correction level M as the Veri*factu rules require.
+async fn invoice_qr(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let url = invoice_response(&state, id).await?.qr_url;
+    let code = qrcode::QrCode::with_error_correction_level(url.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|error| {
+            eprintln!("cannot build QR code: {error}");
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "internal error",
+            )
+        })?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(240, 240)
+        .quiet_zone(true)
+        .build();
+    Ok((
+        [
+            (CONTENT_TYPE, "image/svg+xml"),
+            (CACHE_CONTROL, "private, max-age=86400"),
+        ],
+        svg,
+    )
+        .into_response())
+}
+
+#[derive(Debug, Deserialize)]
+struct SummaryQuery {
+    year: Option<i32>,
+    quarter: Option<u32>,
+}
+
+/// Totals of a quarter; the current one by default.
+async fn summary(
+    State(state): State<AppState>,
+    Query(query): Query<SummaryQuery>,
+) -> Result<Json<store::PeriodSummary>, ApiError> {
+    let today = now().date_naive();
+    let year = query.year.unwrap_or(today.year());
+    let quarter = query.quarter.unwrap_or(today.month0() / 3 + 1);
+    let issuer = directory::issuer(&state.pool).await?;
+    Ok(Json(
+        store::period_summary(&state.pool, &issuer.nif, year, quarter).await?,
+    ))
 }

@@ -639,3 +639,86 @@ pub async fn chain_records(
     }
     Ok(records)
 }
+
+/// Totals of the invoices issued in a period, without cancelled ones.
+#[derive(Debug, Serialize)]
+pub struct PeriodSummary {
+    pub year: i32,
+    pub quarter: u32,
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub invoices: i64,
+    pub cancelled: i64,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_base: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_tax: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_amount: Decimal,
+    pub taxes: Vec<TaxBreakdown>,
+}
+
+/// First and last day of a calendar quarter.
+pub fn quarter_bounds(year: i32, quarter: u32) -> Option<(NaiveDate, NaiveDate)> {
+    if !(1..=4).contains(&quarter) {
+        return None;
+    }
+    let from = NaiveDate::from_ymd_opt(year, quarter * 3 - 2, 1)?;
+    let next = if quarter == 4 {
+        NaiveDate::from_ymd_opt(year + 1, 1, 1)?
+    } else {
+        NaiveDate::from_ymd_opt(year, quarter * 3 + 1, 1)?
+    };
+    Some((from, next.pred_opt()?))
+}
+
+pub async fn period_summary(
+    pool: &PgPool,
+    issuer_nif: &str,
+    year: i32,
+    quarter: u32,
+) -> Result<PeriodSummary, StoreError> {
+    let (from, to) = quarter_bounds(year, quarter)
+        .ok_or_else(|| ValidationError::new("quarter", "must be 1 to 4"))?;
+    let (invoices, cancelled): (i64, i64) = sqlx::query_as(&format!(
+        "SELECT count(*) FILTER (WHERE NOT {CANCELLED}), count(*) FILTER (WHERE {CANCELLED})
+         FROM invoices i WHERE issuer_nif = $1 AND issue_date BETWEEN $2 AND $3"
+    ))
+    .bind(issuer_nif)
+    .bind(from)
+    .bind(to)
+    .fetch_one(pool)
+    .await?;
+    let taxes: Vec<TaxBreakdown> = sqlx::query_as::<_, (Decimal, Decimal, Decimal)>(&format!(
+        "SELECT t.vat_rate, sum(t.base_amount), sum(t.tax_amount)
+         FROM invoice_taxes t JOIN invoices i ON i.id = t.invoice_id
+         WHERE i.issuer_nif = $1 AND i.issue_date BETWEEN $2 AND $3 AND NOT {CANCELLED}
+         GROUP BY t.vat_rate ORDER BY t.vat_rate DESC"
+    ))
+    .bind(issuer_nif)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|(vat_rate, base_amount, tax_amount)| TaxBreakdown {
+        vat_rate: vat_rate.normalize(),
+        base_amount,
+        tax_amount,
+    })
+    .collect();
+    let total_base: Decimal = taxes.iter().map(|tax| tax.base_amount).sum();
+    let total_tax: Decimal = taxes.iter().map(|tax| tax.tax_amount).sum();
+    Ok(PeriodSummary {
+        year,
+        quarter,
+        from,
+        to,
+        invoices,
+        cancelled,
+        total_base,
+        total_tax,
+        total_amount: total_base + total_tax,
+        taxes,
+    })
+}

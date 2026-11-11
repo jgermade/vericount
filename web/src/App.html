@@ -9,8 +9,9 @@
     describeError: (t: Texts, error: unknown) => string
   }
 
-  type View = "loading" | "sign-in" | "invoices" | "contacts" | "settings"
+  type View = "loading" | "sign-in" | "home" | "invoices" | "contacts" | "settings"
 
+  const Home = await import("./Home.html")
   const Invoices = await import("./Invoices.html")
   const Contacts = await import("./Contacts.html")
   const Settings = await import("./Settings.html")
@@ -32,19 +33,21 @@
     clear: () => {
       error = ""
     },
+    go: screen => go(screen),
   }
 
   const go = (next: View) => {
     error = ""
     view = next
   }
+  const signedIn = () => ["home", "invoices", "contacts", "settings"].includes(view)
   const signIn = async () => {
     busy = true
     error = ""
     try {
       username = (await api.signIn(credentials.username, credentials.password)).username
       credentials = { username: "", password: "" }
-      view = "invoices"
+      view = "home"
     } catch (e) {
       error = describeError(t, e)
     } finally {
@@ -65,7 +68,7 @@
   await $mounted()
   try {
     username = (await api.session()).username
-    view = "invoices"
+    view = "home"
   } catch {
     view = "sign-in"
   }
@@ -93,11 +96,13 @@
   </form>
 </main>
 
+<main :if="view === 'home'"><Home :api :t :shell /></main>
 <main :if="view === 'invoices'"><Invoices :api :t :shell /></main>
 <main :if="view === 'contacts'"><Contacts :api :t :shell /></main>
 <main :if="view === 'settings'"><Settings :api :t :shell /></main>
 
-<nav :if="view === 'invoices' || view === 'contacts' || view === 'settings'" class="tabs">
+<nav :if="signedIn()" class="tabs">
+  <button :class.on="view === 'home'" @click="go('home')">{{ t.nav.home }}</button>
   <button :class.on="view === 'invoices'" @click="go('invoices')">{{ t.nav.invoices }}</button>
   <button :class.on="view === 'contacts'" @click="go('contacts')">{{ t.nav.contacts }}</button>
   <button :class.on="view === 'settings'" @click="go('settings')">{{ t.nav.settings }}</button>
