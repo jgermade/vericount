@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::{FromRow, PgConnection, PgPool};
 use vericounts_core::{
+    aeat::{Cancellation, Party, PreviousRecord, Record, Registration},
     hash::{self, CancellationFields, RegistrationFields},
     invoice::{self, Line, TaxBreakdown, Totals, ValidationError},
 };
@@ -473,4 +474,101 @@ pub async fn verify_chain(pool: &PgPool, issuer_nif: &str) -> Result<ChainReport
         last_hash: rows.last().map(|row| row.hash.clone()),
         error: None,
     })
+}
+
+#[derive(FromRow)]
+struct RecordRow {
+    id: i64,
+    invoice_id: i64,
+    record_type: String,
+    series_number: String,
+    issue_date: NaiveDate,
+    hash: String,
+    generated_at: String,
+    issuer_name: String,
+    invoice_type: String,
+    description: String,
+    recipient_name: String,
+    recipient_nif: String,
+    total_tax: Decimal,
+    total_amount: Decimal,
+}
+
+/// Loads an issuer's records, in chain order, in the shape needed to send
+/// them to the AEAT. Each record comes with its database id.
+pub async fn chain_records(
+    pool: &PgPool,
+    issuer_nif: &str,
+) -> Result<Vec<(i64, Record)>, StoreError> {
+    let rows: Vec<RecordRow> = sqlx::query_as(
+        "SELECT r.id, r.invoice_id, r.record_type, r.series_number, r.issue_date, r.hash,
+                r.generated_at, i.issuer_name, i.invoice_type, i.description,
+                i.recipient_name, i.recipient_nif, i.total_tax, i.total_amount
+         FROM billing_records r JOIN invoices i ON i.id = r.invoice_id
+         WHERE r.issuer_nif = $1 ORDER BY r.id",
+    )
+    .bind(issuer_nif)
+    .fetch_all(pool)
+    .await?;
+    let tax_rows: Vec<(i64, Decimal, Decimal, Decimal)> = sqlx::query_as(
+        "SELECT t.invoice_id, t.vat_rate, t.base_amount, t.tax_amount
+         FROM invoice_taxes t JOIN invoices i ON i.id = t.invoice_id
+         WHERE i.issuer_nif = $1 ORDER BY t.invoice_id, t.vat_rate DESC",
+    )
+    .bind(issuer_nif)
+    .fetch_all(pool)
+    .await?;
+
+    let mut previous: Option<PreviousRecord> = None;
+    let mut records = Vec::with_capacity(rows.len());
+    for row in rows {
+        let link = PreviousRecord {
+            issuer_nif: issuer_nif.to_owned(),
+            series_number: row.series_number.clone(),
+            issue_date: row.issue_date,
+            hash: row.hash.clone(),
+        };
+        let record = if row.record_type == "cancellation" {
+            Record::Cancellation(Cancellation {
+                issuer_nif: issuer_nif.to_owned(),
+                series_number: row.series_number,
+                issue_date: row.issue_date,
+                previous: previous.take(),
+                generated_at: row.generated_at,
+                hash: row.hash,
+            })
+        } else {
+            Record::Registration(Registration {
+                issuer: Party {
+                    name: row.issuer_name,
+                    nif: issuer_nif.to_owned(),
+                },
+                series_number: row.series_number,
+                issue_date: row.issue_date,
+                invoice_type: row.invoice_type,
+                description: row.description,
+                recipient: Party {
+                    name: row.recipient_name,
+                    nif: row.recipient_nif,
+                },
+                taxes: tax_rows
+                    .iter()
+                    .filter(|(invoice_id, ..)| *invoice_id == row.invoice_id)
+                    .map(|&(_, vat_rate, base_amount, tax_amount)| TaxBreakdown {
+                        vat_rate: vat_rate.normalize(),
+                        base_amount,
+                        tax_amount,
+                    })
+                    .collect(),
+                total_tax: row.total_tax,
+                total_amount: row.total_amount,
+                previous: previous.take(),
+                generated_at: row.generated_at,
+                hash: row.hash,
+            })
+        };
+        previous = Some(link);
+        records.push((row.id, record));
+    }
+    Ok(records)
 }

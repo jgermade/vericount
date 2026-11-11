@@ -67,3 +67,50 @@ impl Startup {
         })
     }
 }
+
+const AEAT_PRODUCTION_ENDPOINT: &str =
+    "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP";
+const AEAT_TEST_ENDPOINT: &str =
+    "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP";
+
+/// URL of the AEAT record submission service.
+///
+/// In production the official endpoint is always used: an override is an
+/// error, so a mock can never be reached from a production configuration.
+/// In the test environment the override points to a mock; without it, the
+/// AEAT pre-production service is used.
+pub fn aeat_endpoint(
+    environment: AeatEnvironment,
+    endpoint_override: Option<&str>,
+) -> Result<String, String> {
+    match (environment, endpoint_override) {
+        (AeatEnvironment::Production, None) => Ok(AEAT_PRODUCTION_ENDPOINT.to_owned()),
+        (AeatEnvironment::Production, Some(_)) => {
+            Err("the AEAT endpoint cannot be overridden in production".to_owned())
+        }
+        (AeatEnvironment::Test, None) => Ok(AEAT_TEST_ENDPOINT.to_owned()),
+        (AeatEnvironment::Test, Some(endpoint)) => Ok(endpoint.to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn production_never_uses_an_overridden_endpoint() {
+        assert_eq!(
+            aeat_endpoint(AeatEnvironment::Production, None).unwrap(),
+            AEAT_PRODUCTION_ENDPOINT
+        );
+        assert!(aeat_endpoint(AeatEnvironment::Production, Some("http://127.0.0.1:8090")).is_err());
+        assert_eq!(
+            aeat_endpoint(AeatEnvironment::Test, None).unwrap(),
+            AEAT_TEST_ENDPOINT
+        );
+        assert_eq!(
+            aeat_endpoint(AeatEnvironment::Test, Some("http://127.0.0.1:8090/x")).unwrap(),
+            "http://127.0.0.1:8090/x"
+        );
+    }
+}

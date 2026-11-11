@@ -1,0 +1,15 @@
+[package]
+name = "vericounts-aeat-mock"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+rust_decimal = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "signal", "io-util"] }
+vericounts-core = { path = "../core" }

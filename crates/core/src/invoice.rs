@@ -219,11 +219,12 @@ pub fn validate_series(series: &str) -> Result<String, ValidationError> {
     }
 }
 
-/// Validates the shape of a tax identifier: 1 to 20 characters, `A-Z` and
-/// `0-9`. It does not verify check digits nor the AEAT census.
+/// Validates the shape of a Spanish NIF: 9 characters, `A-Z` and `0-9`,
+/// as the AEAT schema requires. It does not verify the check digit nor the
+/// AEAT census. Foreign identifiers are not supported yet.
 pub fn validate_tax_id(field: &str, value: &str) -> Result<String, ValidationError> {
     let value = value.trim().to_ascii_uppercase();
-    let valid = (1..=20).contains(&value.len())
+    let valid = value.len() == 9
         && value
             .bytes()
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit());
@@ -232,7 +233,7 @@ pub fn validate_tax_id(field: &str, value: &str) -> Result<String, ValidationErr
     } else {
         Err(ValidationError::new(
             field,
-            "must be 1 to 20 characters, letters and digits only",
+            "must be a Spanish NIF: 9 letters and digits",
         ))
     }
 }
@@ -315,7 +316,9 @@ mod tests {
             assert!(validate_series(bad).is_err(), "{bad}");
         }
         assert_eq!(validate_tax_id("nif", " b12345678 ").unwrap(), "B12345678");
-        assert!(validate_tax_id("nif", "B-123").is_err());
+        for bad in ["B-1234567", "B1234567", "B123456789", ""] {
+            assert!(validate_tax_id("nif", bad).is_err(), "{bad}");
+        }
         assert_eq!(series_number("A2026", 7), "A2026-0007");
         assert_eq!(series_number("A", 12345), "A-12345");
     }

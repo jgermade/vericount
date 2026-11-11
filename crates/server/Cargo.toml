@@ -11,6 +11,7 @@ workspace = true
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 chrono-tz = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "rust_decimal", "migrate", "macros"] }
@@ -19,6 +20,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 vericounts-core = { path = "../core" }
 
 [dev-dependencies]
+vericounts-aeat-mock = { path = "../aeat-mock" }
 http-body-util = "0.1"
 serde_json = "1"
 tower = { version = "0.5", features = ["util"] }

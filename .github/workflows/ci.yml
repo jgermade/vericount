@@ -34,6 +34,8 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
+      - name: Install xmllint, used to validate XML against the AEAT schemas
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
       - name: Install the toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
