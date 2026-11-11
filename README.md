@@ -44,6 +44,8 @@ Configuration (environment variables):
 | `VERICOUNTS_AEAT_SUBMIT` | off | Set to `1` to send records to the AEAT |
 | `VERICOUNTS_AEAT_ENDPOINT` | official | Service URL, e.g. the mock; refused in production |
 | `VERICOUNTS_AEAT_IDENTITY_PEM` | none | PEM file with the client certificate and key |
+| `VERICOUNTS_AEAT_REPRESENTATIVE_NAME` | none | Who submits on behalf of the company; set together with the NIF |
+| `VERICOUNTS_AEAT_REPRESENTATIVE_NIF` | none | NIF of that representative |
 | `VERICOUNTS_SOFTWARE_PRODUCER_NAME` | required to send | Producer of the software, declared in every record |
 | `VERICOUNTS_SOFTWARE_PRODUCER_NIF` | required to send | NIF of the producer |
 | `VERICOUNTS_INSTALLATION_NUMBER` | `1` | Identifies this installation in every record |
@@ -51,6 +53,21 @@ Configuration (environment variables):
 | `VERICOUNTS_WEB_DIR` | `web/dist` | Directory with the built web client |
 
 After signing in for the first time, enter the company data, a series and a customer in the interface; nothing can be invoiced before that.
+
+## AEAT certificate
+
+The AEAT service requires a client certificate. Two kinds work, and the Settings screen tells which one is in use and when it expires:
+
+- **A certificate of the company** (a "representative of a legal person" certificate). Its NIF is the company's; nothing else is needed.
+- **A personal certificate under a power of attorney** ("apoderamiento"). The company must have empowered its holder at the AEAT to submit billing records. Set `VERICOUNTS_AEAT_REPRESENTATIVE_NAME` and `VERICOUNTS_AEAT_REPRESENTATIVE_NIF` to declare the holder as representative in every request.
+
+The server reads one PEM file with the certificate and its private key. Certificates usually come as `.p12` or `.pfx` files; convert them with:
+
+```bash
+openssl pkcs12 -in certificate.p12 -out identity.pem -nodes
+```
+
+Keep that file outside the repository, readable only by the server, and never commit it.
 
 ## Layout
 

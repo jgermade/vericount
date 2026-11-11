@@ -25,7 +25,7 @@ Mobile first, with five entries in a bottom bar: Home, Invoices, Expenses, Conta
 | Table | Content | Changes | Status |
 |---|---|---|---|
 | `invoices`, `invoice_lines`, `invoice_taxes` | Issued invoices with issuer and customer data and addresses copied at issue time. | Insert-only | Exists |
-| `billing_records` | Veri*factu registration and cancellation records with their chained hash. | Insert-only | Exists |
+| `billing_records` | Veri*factu registration and cancellation records with their chained hash, including the records that replace rejected ones. | Insert-only | Exists |
 | `aeat_submissions`, `aeat_submission_records` | Each request sent to the AEAT and the records it carried. | Insert-only | Exists |
 | `aeat_responses`, `aeat_record_results` | What came back for each request and for each record. The state of an invoice is derived from here. | Insert-only | Exists |
 | `events` | Event log: sign-ins, issued and cancelled invoices, submissions. | Insert-only | Exists |

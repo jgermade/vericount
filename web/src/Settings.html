@@ -1,7 +1,7 @@
 <script :setup="{ api, t, shell }: Props" lang="ts">
   import type { Api, ApiError } from "./api"
   import type { Texts } from "./i18n/es"
-  import type { Company, Series, Shell } from "./types"
+  import type { AeatQueue, Company, Series, Shell } from "./types"
 
   interface Props { api: Api; t: Texts; shell: Shell }
 
@@ -10,6 +10,8 @@
   let loaded = false
   let saved = false
   let series: Series[] = []
+  let aeat: AeatQueue | null = null
+  const day = (timestamp: string) => timestamp.slice(0, 10).split("-").reverse().join("/")
   let newSeries = { code: "", description: "" }
   let busy = false
 
@@ -36,6 +38,8 @@
     }
     series = await api.listSeries()
     loaded = true
+    // Only available once the company exists.
+    if (companyExists) aeat = await api.aeatQueue()
   })
   const saveCompany = () => run(async () => {
     company = await api.saveCompany(company)
@@ -112,4 +116,19 @@
     </label>
     <button type="submit" :disabled="busy">{{ t.settings.addSeries }}</button>
   </form>
+</section>
+
+<section :if="aeat" class="card">
+  <h3>{{ t.settings.aeatTitle }}</h3>
+  <p>{{ aeat.enabled ? t.settings.aeatEnabled : t.settings.aeatDisabled }}</p>
+  <p :if="aeat.enabled && !aeat.certificate" class="notice">{{ t.settings.noCertificate }}</p>
+  <div :if="aeat.certificate">
+    <p>
+      {{ t.settings.certificate(aeat.certificate.subject, aeat.certificate.nif || "?") }}
+      {{ t.settings.certificateExpires(day(aeat.certificate.expires_at)) }}
+    </p>
+    <p :if="aeat.certificate_matches_company" class="muted">{{ t.settings.certificateOwn }}</p>
+    <p :else class="notice">{{ t.settings.certificateOther }}</p>
+  </div>
+  <p :if="aeat.representative_nif" class="muted">{{ t.settings.representative(aeat.representative_nif) }}</p>
 </section>

@@ -108,6 +108,13 @@
     confirmingCancel = false
   })
 
+  const resend = () => run(async () => {
+    const current = invoice
+    if (!current) return
+    invoice = await api.correctInvoice(current.id)
+  })
+  const hasRejected = (current: Invoice) =>
+    current.records.some(record => record.aeat.state === "rejected")
   const print = () => window.print()
 
   await $mounted()
@@ -255,6 +262,7 @@
       <li :each="record in invoice.records" :key="record.id">
         <strong>{{ t.detail.recordType[record.record_type] }}</strong>
         <span :class="stateClass(record.aeat.state)">{{ t.aeatState[record.aeat.state] }}</span>
+        <span :if="record.correction" class="tag pending">{{ t.detail.correctionTag }}</span>
         <span class="muted">{{ record.generated_at }}</span><br>
         <span :if="record.aeat.error_code" class="error-text">
           {{ record.aeat.error_code }}: {{ record.aeat.error_description }}<br>
@@ -264,6 +272,10 @@
         <code :title="record.previous_hash">{{ shortHash(record.previous_hash) }}</code>
       </li>
     </ul>
+    <div :if="hasRejected(invoice)" class="notice">
+      <p>{{ t.detail.rejectedHelp }}</p>
+      <button :disabled="busy" @click="resend">{{ t.detail.resend }}</button>
+    </div>
     <p><a :href="invoice.qr_url" rel="noopener noreferrer" target="_blank">{{ t.detail.qrLink }}</a></p>
   </section>
 

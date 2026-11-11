@@ -77,6 +77,8 @@ export const api = {
     request<InvoicePreview>("POST", "/invoices/preview", invoice),
   createInvoice: (invoice: InvoiceInput) => request<Invoice>("POST", "/invoices", invoice),
   cancelInvoice: (id: number) => request<Invoice>("POST", `/invoices/${id}/cancellation`, {}),
+  /// Replaces the rejected record of an invoice with a new one to send.
+  correctInvoice: (id: number) => request<Invoice>("POST", `/invoices/${id}/correction`, {}),
   verifyChain: () => request<ChainReport>("GET", "/chain/verification"),
 }
 

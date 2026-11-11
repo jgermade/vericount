@@ -39,7 +39,13 @@ export interface InvoicePreview extends Totals {
   taxes: TaxBreakdown[]
 }
 
-export type AeatState = "pending" | "accepted" | "accepted_with_errors" | "rejected"
+export type AeatState =
+  | "pending"
+  | "accepted"
+  | "accepted_with_errors"
+  | "rejected"
+  // Rejected and replaced by a later record of the same invoice.
+  | "superseded"
 
 export interface AeatResult {
   state: AeatState
@@ -54,6 +60,16 @@ export interface AeatQueue {
   accepted_with_errors: number
   last_outcome: string | null
   last_error: string | null
+  certificate: Certificate | null
+  certificate_matches_company: boolean | null
+  representative_nif: string | null
+}
+
+export interface Certificate {
+  subject: string
+  nif: string | null
+  of_legal_person: boolean
+  expires_at: string
 }
 
 export interface Session {
@@ -74,6 +90,7 @@ export interface BillingRecord {
   id: number
   aeat: AeatResult
   record_type: "registration" | "cancellation"
+  correction: boolean
   previous_hash: string
   hash: string
   generated_at: string

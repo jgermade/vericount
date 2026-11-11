@@ -382,3 +382,8 @@ td.num {
     padding: 0;
   }
 }
+
+.tag.superseded {
+  border-color: var(--muted);
+  color: var(--muted);
+}
