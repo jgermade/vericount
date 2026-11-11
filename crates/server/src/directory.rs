@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
-use vericounts_core::invoice::{self, ValidationError};
+use vericount_core::invoice::{self, ValidationError};
 
 use crate::{config::Issuer, store::StoreError};
 

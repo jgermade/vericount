@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prints the version of vericounts (from Cargo.toml), or, with an argument
+# Prints the version of vericount (from Cargo.toml), or, with an argument
 # (major, minor or patch), sets the next one in every file that holds it.
 set -eu
 cd "$(dirname "$0")/.."
@@ -20,8 +20,8 @@ esac
 
 sed -i "/^\[workspace.package\]/,/^\[/s/^version = \".*\"/version = \"$next\"/" Cargo.toml
 # The workspace crates in the lock file.
-for crate in vericounts-core vericounts-server vericounts-aeat-mock; do
+for crate in vericount-core vericount-server vericount-aeat-mock; do
     sed -i "/^name = \"$crate\"$/{n;s/^version = \".*\"/version = \"$next\"/}" Cargo.lock
 done
-sed -i "s/^version: .*/version: $next/; s/^appVersion: .*/appVersion: \"$next\"/" charts/vericounts/Chart.yaml
+sed -i "s/^version: .*/version: $next/; s/^appVersion: .*/appVersion: \"$next\"/" charts/vericount/Chart.yaml
 echo "$next"

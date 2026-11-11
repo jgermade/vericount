@@ -1,8 +1,8 @@
-<p align="center"><img src="web/public/logo-wordmark.svg" alt="vericounts" width="320"></p>
+<p align="center"><img src="web/public/logo-wordmark.svg" alt="vericount" width="320"></p>
 
-# vericounts
+# vericount
 
-Bookkeeping for a Spanish SL with Veri*factu compliance. See the latest roadmap in [`ROADMAP/`](ROADMAP/) and the agent conventions in [`AGENTS.md`](AGENTS.md).
+Bookkeeping for a Spanish SL with Veri*factu compliance. The name joins *verificar* (to verify) and *cuentas* (accounts); the logo is an abacus whose beads are chained blocks drawing a check mark. See the latest roadmap in [`ROADMAP/`](ROADMAP/) and the agent conventions in [`AGENTS.md`](AGENTS.md).
 
 ## Status
 
@@ -18,9 +18,9 @@ Three ways, all from the same [releases](https://github.com/jgermade/vericounts/
 curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
 ```
 
-A wizard (in Spanish) offers to **install** or, if vericounts is already there, to **reinstall/update** or **uninstall**:
+A wizard (in Spanish) offers to **install** or, if vericount is already there, to **reinstall/update** or **uninstall**:
 
-- **Install** asks for the public URL, the first user's email and SMTP; installs PostgreSQL locally (apt or dnf) or uses an existing one; downloads the release for the architecture and checks it against `SHA256SUMS`; installs it to `/opt/vericounts`, the settings to `/etc/vericounts/vericounts.env` and a hardened systemd service `vericounts` listening on `127.0.0.1`; runs the migrations and invites the first user.
+- **Install** asks for the public URL, the first user's email and SMTP; installs PostgreSQL locally (apt or dnf) or uses an existing one; downloads the release for the architecture and checks it against `SHA256SUMS`; installs it to `/opt/vericount`, the settings to `/etc/vericount/vericount.env` and a hardened systemd service `vericount` listening on `127.0.0.1`; runs the migrations and invites the first user.
 - **Update** installs the latest (or `--version`) release next to the current one, migrates, restarts and checks the service; the two previous versions are kept to go back.
 - **Uninstall** removes the program and the service, and keeps the configuration and the database unless `BORRAR` is typed: invoices must be kept for years.
 
@@ -28,7 +28,7 @@ Without questions: `sudo bash setup.sh install --yes` (answers from environment 
 
 ### Docker
 
-[`docker-compose.yml`](docker-compose.yml) runs PostgreSQL, the migrations and the server (`ghcr.io/jgermade/vericounts`, a distroless image of about 25 MB with the static binary):
+[`docker-compose.yml`](docker-compose.yml) runs PostgreSQL, the migrations and the server (`ghcr.io/jgermade/vericount`, a distroless image of about 25 MB with the static binary):
 
 ```bash
 cp .env.example .env   # set the two passwords, the public URL and SMTP
@@ -42,26 +42,28 @@ docker compose up -d
 docker compose run --rm app invite you@example.com
 ```
 
-The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT certificate goes in `./secrets` (see `.env.example`). `docker build -t vericounts .` builds the same image from source.
+The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT certificate goes in `./secrets` (see `.env.example`). `docker build -t vericount .` builds the same image from source.
 
 ### Kubernetes (Helm)
 
-The chart in [`charts/vericounts`](charts/vericounts) (also attached to each release) runs one replica, with the migrations in an init container. PostgreSQL is external, e.g. an operator such as PGO with pgBackRest:
+The chart in [`charts/vericount`](charts/vericount) (also attached to each release) runs one replica, with the migrations in an init container. PostgreSQL is external, e.g. an operator such as PGO with pgBackRest:
 
 ```bash
-helm install vericounts https://github.com/jgermade/vericounts/releases/download/vX.Y.Z/vericounts-X.Y.Z.tgz \
+helm install vericount https://github.com/jgermade/vericounts/releases/download/vX.Y.Z/vericount-X.Y.Z.tgz \
   --set publicUrl=https://books.example.com \
-  --set database.url=postgres://vericounts:...@db/vericounts \
-  --set database.migrationUrl=postgres://vericounts_owner:...@db/vericounts \
+  --set database.url=postgres://vericount:...@db/vericount \
+  --set database.migrationUrl=postgres://vericount_owner:...@db/vericount \
   --set smtp.url=smtps://user:password@smtp.example.com --set smtp.from=no-reply@example.com \
   --set ingress.enabled=true
 ```
 
-All values are described in [`values.yaml`](charts/vericounts/values.yaml); `existingSecret` takes the connection URLs from a Secret instead.
+All values are described in [`values.yaml`](charts/vericount/values.yaml); `existingSecret` takes the connection URLs from a Secret instead.
 
 ### Database roles
 
-The server connects with a login role that is a member of `vericounts_app`, which may only read and insert; the migrations run with the role that owns the schema. The first migration creates `vericounts_app`, so on the first run the owner needs `CREATEROLE` (it can be revoked afterwards). `migrate` with `VERICOUNTS_APP_ROLE=<role>` then makes the server's role a member. The installer, the compose file and the chart do all of this.
+The role `vericounts_app` keeps the project's former name: the first migrations create it and grant it its rights, and applied migrations cannot change.
+
+The server connects with a login role that is a member of `vericounts_app`, which may only read and insert; the migrations run with the role that owns the schema. The first migration creates `vericounts_app`, so on the first run the owner needs `CREATEROLE` (it can be revoked afterwards). `migrate` with `VERICOUNT_APP_ROLE=<role>` then makes the server's role a member. The installer, the compose file and the chart do all of this.
 
 ## Releases
 
@@ -76,43 +78,43 @@ Requires Rust (pinned in `rust-toolchain.toml`), Node 22 and PostgreSQL 16.
 cd web && npm ci && npm run build
 
 # Database: migrations run with the owner role
-DATABASE_URL=postgres://owner:secret@127.0.0.1/vericounts cargo run -- migrate
+DATABASE_URL=postgres://owner:secret@127.0.0.1/vericount cargo run -- migrate
 
 # First user: invite an email address, then sign up with it in the web client
-DATABASE_URL=postgres://app:secret@127.0.0.1/vericounts cargo run -- invite you@example.com
+DATABASE_URL=postgres://app:secret@127.0.0.1/vericount cargo run -- invite you@example.com
 
 # Server: use a login role that is a member of vericounts_app
-DATABASE_URL=postgres://app:secret@127.0.0.1/vericounts cargo run
+DATABASE_URL=postgres://app:secret@127.0.0.1/vericount cargo run
 
 # Checks (the tests create temporary databases from DATABASE_URL)
 DATABASE_URL=postgres://postgres:postgres@127.0.0.1/postgres cargo test --workspace
 # The same, with the SMTP test against a local Mailpit (see below)
-VERICOUNTS_TEST_SMTP_URL=smtp://127.0.0.1:1025 VERICOUNTS_TEST_MAILPIT_URL=http://127.0.0.1:8025 \
+VERICOUNT_TEST_SMTP_URL=smtp://127.0.0.1:1025 VERICOUNT_TEST_MAILPIT_URL=http://127.0.0.1:8025 \
   DATABASE_URL=postgres://postgres:postgres@127.0.0.1/postgres cargo test --workspace
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The session cookie is `Secure`: browsers accept it over plain HTTP only on `localhost` and `127.0.0.1`, so anything else needs HTTPS. Passkeys are bound to the host name of `VERICOUNTS_PUBLIC_URL` and do not work on an IP address: open the client at `http://localhost:8080`, not `127.0.0.1`.
+The session cookie is `Secure`: browsers accept it over plain HTTP only on `localhost` and `127.0.0.1`, so anything else needs HTTPS. Passkeys are bound to the host name of `VERICOUNT_PUBLIC_URL` and do not work on an IP address: open the client at `http://localhost:8080`, not `127.0.0.1`.
 
 ## Sign-in
 
-- Nobody can sign up uninvited. The first user is invited with `vericounts-server invite <email>`; signed-in users invite others from Settings, which also emails them. All users have full access.
+- Nobody can sign up uninvited. The first user is invited with `vericount-server invite <email>`; signed-in users invite others from Settings, which also emails them. All users have full access.
 - Signing up and signing in are the same step: enter the email address and the six-digit code sent to it. The first sign-in of an invited address creates the account.
 - Codes are valid for 10 minutes and once, only the latest one counts, and each allows 5 guesses. At most one code a minute and five an hour are sent to an address. The answer to a code request is the same whether the address has an account or not.
 - After signing in with a code, the client offers to create a passkey on that device. Passkeys are then offered in the email field's autofill and by the "Entrar con passkey" button, with no email or code. They are listed and removed in Settings.
 
-Emails go through SMTP (`VERICOUNTS_SMTP_URL`). Without it, outside production, they are printed to standard error, codes included. To see them as a real mail client would, run [Mailpit](https://mailpit.axllent.org/) and open its inbox at `http://127.0.0.1:8025`:
+Emails go through SMTP (`VERICOUNT_SMTP_URL`). Without it, outside production, they are printed to standard error, codes included. To see them as a real mail client would, run [Mailpit](https://mailpit.axllent.org/) and open its inbox at `http://127.0.0.1:8025`:
 
 ```bash
 mailpit --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025
 ```
 
 ```bash
-VERICOUNTS_SMTP_URL=smtp://127.0.0.1:1025 VERICOUNTS_MAIL_FROM='vericounts <no-reply@example.com>' cargo run
+VERICOUNT_SMTP_URL=smtp://127.0.0.1:1025 VERICOUNT_MAIL_FROM='vericount <no-reply@example.com>' cargo run
 ```
 
-To try the AEAT flow locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas cargo run -p vericounts-aeat-mock` and point `VERICOUNTS_AEAT_ENDPOINT` to the URL it prints.
+To try the AEAT flow locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas cargo run -p vericount-aeat-mock` and point `VERICOUNT_AEAT_ENDPOINT` to the URL it prints.
 
 `npm run dev` in `web/` serves the client with hot reload and proxies `/api` to the server.
 
@@ -121,21 +123,21 @@ Configuration (environment variables; an empty value counts as unset):
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | required | PostgreSQL connection |
-| `VERICOUNTS_AEAT_ENV` | `test` | `test` or `production`; selects the QR URL |
-| `VERICOUNTS_AEAT_SUBMIT` | off | Set to `1` to send records to the AEAT |
-| `VERICOUNTS_AEAT_ENDPOINT` | official | Service URL, e.g. the mock; refused in production |
-| `VERICOUNTS_AEAT_IDENTITY_PEM` | none | PEM file with the client certificate and key |
-| `VERICOUNTS_AEAT_REPRESENTATIVE_NAME` | none | Who submits on behalf of the company; set together with the NIF |
-| `VERICOUNTS_AEAT_REPRESENTATIVE_NIF` | none | NIF of that representative |
-| `VERICOUNTS_SOFTWARE_PRODUCER_NAME` | required to send | Producer of the software, declared in every record |
-| `VERICOUNTS_SOFTWARE_PRODUCER_NIF` | required to send | NIF of the producer |
-| `VERICOUNTS_INSTALLATION_NUMBER` | `1` | Identifies this installation in every record |
-| `VERICOUNTS_PUBLIC_URL` | `http://localhost:8080` | Where users open the client; passkeys are bound to its host, invitations link to it. Must be `https` outside `localhost` |
-| `VERICOUNTS_SMTP_URL` | none; required in production | SMTP server, e.g. `smtps://user:password@smtp.example.com` or `smtp://127.0.0.1:1025` |
-| `VERICOUNTS_MAIL_FROM` | required with SMTP | Sender, e.g. `vericounts <no-reply@example.com>` |
-| `VERICOUNTS_ADDR` | `127.0.0.1:8080` | Listen address |
-| `VERICOUNTS_APP_ROLE` | none | Only for `migrate`: the server's login role, made a member of `vericounts_app` |
-| `VERICOUNTS_WEB_DIR` | `web/dist` | Directory with the built web client |
+| `VERICOUNT_AEAT_ENV` | `test` | `test` or `production`; selects the QR URL |
+| `VERICOUNT_AEAT_SUBMIT` | off | Set to `1` to send records to the AEAT |
+| `VERICOUNT_AEAT_ENDPOINT` | official | Service URL, e.g. the mock; refused in production |
+| `VERICOUNT_AEAT_IDENTITY_PEM` | none | PEM file with the client certificate and key |
+| `VERICOUNT_AEAT_REPRESENTATIVE_NAME` | none | Who submits on behalf of the company; set together with the NIF |
+| `VERICOUNT_AEAT_REPRESENTATIVE_NIF` | none | NIF of that representative |
+| `VERICOUNT_SOFTWARE_PRODUCER_NAME` | required to send | Producer of the software, declared in every record |
+| `VERICOUNT_SOFTWARE_PRODUCER_NIF` | required to send | NIF of the producer |
+| `VERICOUNT_INSTALLATION_NUMBER` | `1` | Identifies this installation in every record |
+| `VERICOUNT_PUBLIC_URL` | `http://localhost:8080` | Where users open the client; passkeys are bound to its host, invitations link to it. Must be `https` outside `localhost` |
+| `VERICOUNT_SMTP_URL` | none; required in production | SMTP server, e.g. `smtps://user:password@smtp.example.com` or `smtp://127.0.0.1:1025` |
+| `VERICOUNT_MAIL_FROM` | required with SMTP | Sender, e.g. `vericount <no-reply@example.com>` |
+| `VERICOUNT_ADDR` | `127.0.0.1:8080` | Listen address |
+| `VERICOUNT_APP_ROLE` | none | Only for `migrate`: the server's login role, made a member of `vericounts_app` |
+| `VERICOUNT_WEB_DIR` | `web/dist` | Directory with the built web client |
 
 After signing in for the first time, enter the company data, a series and a customer in the interface; nothing can be invoiced before that.
 
@@ -144,7 +146,7 @@ After signing in for the first time, enter the company data, a series and a cust
 The AEAT service requires a client certificate. Two kinds work, and the Settings screen tells which one is in use and when it expires:
 
 - **A certificate of the company** (a "representative of a legal person" certificate). Its NIF is the company's; nothing else is needed.
-- **A personal certificate under a power of attorney** ("apoderamiento"). The company must have empowered its holder at the AEAT to submit billing records. Set `VERICOUNTS_AEAT_REPRESENTATIVE_NAME` and `VERICOUNTS_AEAT_REPRESENTATIVE_NIF` to declare the holder as representative in every request.
+- **A personal certificate under a power of attorney** ("apoderamiento"). The company must have empowered its holder at the AEAT to submit billing records. Set `VERICOUNT_AEAT_REPRESENTATIVE_NAME` and `VERICOUNT_AEAT_REPRESENTATIVE_NIF` to declare the holder as representative in every request.
 
 The server reads one PEM file with the certificate and its private key. Certificates usually come as `.p12` or `.pfx` files; convert them with:
 
@@ -161,5 +163,5 @@ Keep that file outside the repository, readable only by the server, and never co
 - `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
 - `crates/aeat-mock`: mock of the AEAT record submission service, for tests and local development.
 - `aeat/schemas`: official AEAT WSDL and XSD files.
-- `setup.sh`, `Dockerfile`, `docker/`, `docker-compose.yml`, `charts/vericounts`: installation and deployment.
+- `setup.sh`, `Dockerfile`, `docker/`, `docker-compose.yml`, `charts/vericount`: installation and deployment.
 - `scripts/version.sh`: prints or bumps the version.

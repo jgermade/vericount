@@ -3644,18 +3644,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
-name = "vericounts-aeat-mock"
+name = "vericount-aeat-mock"
 version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
  "rust_decimal",
  "tokio",
- "vericounts-core",
+ "vericount-core",
 ]
 
 [[package]]
-name = "vericounts-core"
+name = "vericount-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -3666,7 +3666,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vericounts-server"
+name = "vericount-server"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -3689,8 +3689,8 @@ dependencies = [
  "tower",
  "tower-http",
  "uuid",
- "vericounts-aeat-mock",
- "vericounts-core",
+ "vericount-aeat-mock",
+ "vericount-core",
  "webauthn-rs",
  "x509-parser 0.17.0",
 ]

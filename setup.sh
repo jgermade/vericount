@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# vericounts installer for a Linux server with systemd (x86_64 or aarch64).
+# vericount installer for a Linux server with systemd (x86_64 or aarch64).
 #
 #   curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
 #
-# Without arguments it runs a wizard: install, or, when vericounts is
+# Without arguments it runs a wizard: install, or, when vericount is
 # already installed, reinstall/update or uninstall. It can also run
 # without questions:
 #
@@ -12,12 +12,12 @@
 #   setup.sh uninstall [--yes] [--purge]
 #
 # With --yes, install takes its answers from the environment:
-# VERICOUNTS_PUBLIC_URL, VERICOUNTS_PORT, VERICOUNTS_ADMIN_EMAIL,
-# VERICOUNTS_SMTP_URL, VERICOUNTS_MAIL_FROM and, to use an existing
-# PostgreSQL instead of a local one, VERICOUNTS_DATABASE_URL and
-# VERICOUNTS_MIGRATION_DATABASE_URL.
+# VERICOUNT_PUBLIC_URL, VERICOUNT_PORT, VERICOUNT_ADMIN_EMAIL,
+# VERICOUNT_SMTP_URL, VERICOUNT_MAIL_FROM and, to use an existing
+# PostgreSQL instead of a local one, VERICOUNT_DATABASE_URL and
+# VERICOUNT_MIGRATION_DATABASE_URL.
 #
-# VERICOUNTS_ARCHIVE=path/to/vericounts-X.Y.Z-ARCH-linux.tar.gz installs a
+# VERICOUNT_ARCHIVE=path/to/vericount-X.Y.Z-ARCH-linux.tar.gz installs a
 # local archive instead of downloading one.
 #
 # Messages are in Spanish, like the interface; code and comments are not.
@@ -27,14 +27,14 @@ set -euo pipefail
 # whatever the caller's umask.
 umask 022
 
-REPO=${VERICOUNTS_REPO:-jgermade/vericounts}
-PREFIX=/opt/vericounts
-CONF_DIR=/etc/vericounts
-ENV_FILE=$CONF_DIR/vericounts.env
+REPO=${VERICOUNT_REPO:-jgermade/vericounts}
+PREFIX=/opt/vericount
+CONF_DIR=/etc/vericount
+ENV_FILE=$CONF_DIR/vericount.env
 # The owner's connection, for migrations. Readable by root only.
 MIGRATE_FILE=$CONF_DIR/migrate.env
-UNIT_FILE=/etc/systemd/system/vericounts.service
-SERVICE_USER=vericounts
+UNIT_FILE=/etc/systemd/system/vericount.service
+SERVICE_USER=vericount
 KEEP_RELEASES=3
 
 ACTION=""
@@ -132,13 +132,13 @@ fetch_release() {
     local version=$1 arch tmp archive
     arch=$(detect_arch)
     tmp=$(mktemp -d)
-    if [ -n "${VERICOUNTS_ARCHIVE:-}" ]; then
-        archive=$VERICOUNTS_ARCHIVE
+    if [ -n "${VERICOUNT_ARCHIVE:-}" ]; then
+        archive=$VERICOUNT_ARCHIVE
         [ -f "$archive" ] || die "no existe $archive"
     else
-        local name="vericounts-$version-$arch-linux.tar.gz"
+        local name="vericount-$version-$arch-linux.tar.gz"
         local base="https://github.com/$REPO/releases/download/v$version"
-        step "Descargando vericounts $version ($arch)" >&2
+        step "Descargando vericount $version ($arch)" >&2
         curl -fsSL -o "$tmp/$name" "$base/$name" || die "no se ha podido descargar $base/$name"
         curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "no se ha podido descargar SHA256SUMS"
         (cd "$tmp" && grep " $name\$" SHA256SUMS | sha256sum -c --quiet -) \
@@ -146,8 +146,8 @@ fetch_release() {
         archive=$tmp/$name
     fi
     tar -C "$tmp" -xzf "$archive"
-    [ -x "$tmp/vericounts/bin/vericounts-server" ] || die "el archivo no contiene vericounts"
-    echo "$tmp/vericounts"
+    [ -x "$tmp/vericount/bin/vericount-server" ] || die "el archivo no contiene vericount"
+    echo "$tmp/vericount"
 }
 
 # install_release DIR → installs it under $PREFIX/releases and prints its version.
@@ -213,29 +213,29 @@ create_local_database() {
     local owner_password app_password
     owner_password=$(random_password)
     app_password=$(random_password)
-    step "Creando la base de datos vericounts"
-    if [ -n "$(psql_admin -c "SELECT 1 FROM pg_database WHERE datname = 'vericounts'")" ]; then
-        die "ya existe una base de datos vericounts en este PostgreSQL"
+    step "Creando la base de datos vericount"
+    if [ -n "$(psql_admin -c "SELECT 1 FROM pg_database WHERE datname = 'vericount'")" ]; then
+        die "ya existe una base de datos vericount en este PostgreSQL"
     fi
     psql_admin <<SQL
-CREATE ROLE vericounts_owner LOGIN CREATEROLE PASSWORD '$owner_password';
-CREATE ROLE vericounts LOGIN PASSWORD '$app_password';
-CREATE DATABASE vericounts OWNER vericounts_owner;
+CREATE ROLE vericount_owner LOGIN CREATEROLE PASSWORD '$owner_password';
+CREATE ROLE vericount LOGIN PASSWORD '$app_password';
+CREATE DATABASE vericount OWNER vericount_owner;
 SQL
-    DATABASE_URL="postgres://vericounts:$app_password@127.0.0.1:5432/vericounts"
-    MIGRATION_DATABASE_URL="postgres://vericounts_owner:$owner_password@127.0.0.1:5432/vericounts"
+    DATABASE_URL="postgres://vericount:$app_password@127.0.0.1:5432/vericount"
+    MIGRATION_DATABASE_URL="postgres://vericount_owner:$owner_password@127.0.0.1:5432/vericount"
 }
 
 # After the first migration the owner no longer needs to create roles.
 finish_local_database() {
-    psql_admin -c "ALTER ROLE vericounts_owner NOCREATEROLE"
+    psql_admin -c "ALTER ROLE vericount_owner NOCREATEROLE"
 }
 
 drop_local_database() {
-    psql_admin -c "DROP DATABASE IF EXISTS vericounts"
-    psql_admin -c "DROP ROLE IF EXISTS vericounts"
+    psql_admin -c "DROP DATABASE IF EXISTS vericount"
+    psql_admin -c "DROP ROLE IF EXISTS vericount"
     psql_admin -c "DROP ROLE IF EXISTS vericounts_app"
-    psql_admin -c "DROP ROLE IF EXISTS vericounts_owner"
+    psql_admin -c "DROP ROLE IF EXISTS vericount_owner"
 }
 
 # --- Service ----------------------------------------------------------------
@@ -249,7 +249,7 @@ run_with() {
         # shellcheck disable=SC1090
         . "$file"
         set +a
-        runuser -u "$SERVICE_USER" -- "$PREFIX/current/bin/vericounts-server" "$@"
+        runuser -u "$SERVICE_USER" -- "$PREFIX/current/bin/vericount-server" "$@"
     )
 }
 
@@ -262,7 +262,7 @@ write_unit() {
     cat >"$UNIT_FILE" <<EOF
 # Installed by setup.sh. Settings are in $ENV_FILE.
 [Unit]
-Description=vericounts
+Description=vericount
 Documentation=https://github.com/$REPO
 After=network-online.target postgresql.service
 Wants=network-online.target
@@ -271,7 +271,7 @@ Wants=network-online.target
 User=$SERVICE_USER
 Group=$SERVICE_USER
 EnvironmentFile=$ENV_FILE
-ExecStart=$PREFIX/current/bin/vericounts-server serve
+ExecStart=$PREFIX/current/bin/vericount-server serve
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
@@ -304,11 +304,11 @@ wait_healthy() {
 }
 
 restart_service() {
-    systemctl restart vericounts
+    systemctl restart vericount
     if wait_healthy; then
-        ok "vericounts $(installed_version) está en marcha"
+        ok "vericount $(installed_version) está en marcha"
     else
-        warn "vericounts no responde. Mira el registro con: journalctl -u vericounts -e"
+        warn "vericount no responde. Mira el registro con: journalctl -u vericount -e"
         return 1
     fi
 }
@@ -318,8 +318,8 @@ restart_service() {
 do_install() {
     require_systemd
     local version=$VERSION public_url port admin_email smtp_url mail_from db_mode release
-    [ -n "$version" ] || [ -n "${VERICOUNTS_ARCHIVE:-}" ] || version=$(latest_version)
-    [ -n "$version" ] || [ -n "${VERICOUNTS_ARCHIVE:-}" ] || die "no se encuentra ninguna versión publicada de $REPO"
+    [ -n "$version" ] || [ -n "${VERICOUNT_ARCHIVE:-}" ] || version=$(latest_version)
+    [ -n "$version" ] || [ -n "${VERICOUNT_ARCHIVE:-}" ] || die "no se encuentra ninguna versión publicada de $REPO"
 
     # An earlier uninstall that kept the data: install the program again
     # with the same settings and database.
@@ -331,29 +331,29 @@ do_install() {
         activate_release "$release"
         migrate
         write_unit
-        systemctl enable vericounts >/dev/null 2>&1
+        systemctl enable vericount >/dev/null 2>&1
         restart_service
         return
     fi
 
     say ""
-    say "${BOLD}Instalación de vericounts${RESET}"
+    say "${BOLD}Instalación de vericount${RESET}"
     say "Las respuestas se guardan en $ENV_FILE y se pueden cambiar después."
     say ""
     ask public_url "Dirección web con la que se abrirá (https://…; las passkeys necesitan un dominio)" \
-        "${VERICOUNTS_PUBLIC_URL:-http://localhost:8080}"
-    ask port "Puerto local del servidor (pon delante un proxy HTTPS)" "${VERICOUNTS_PORT:-8080}"
+        "${VERICOUNT_PUBLIC_URL:-http://localhost:8080}"
+    ask port "Puerto local del servidor (pon delante un proxy HTTPS)" "${VERICOUNT_PORT:-8080}"
     [[ $port =~ ^[0-9]+$ ]] || die "el puerto debe ser un número"
     ask admin_email "Correo del primer usuario (recibirá un código para crear su cuenta)" \
-        "${VERICOUNTS_ADMIN_EMAIL:-}"
+        "${VERICOUNT_ADMIN_EMAIL:-}"
     say ""
     say "Correo saliente (SMTP) para los códigos de acceso. Sin él, los códigos"
     say "se escriben en el registro del servicio, lo que solo vale para probar."
     ask smtp_url "URL SMTP, p. ej. smtps://usuario:clave@smtp.ejemplo.es (vacío: sin SMTP)" \
-        "${VERICOUNTS_SMTP_URL:-}"
+        "${VERICOUNT_SMTP_URL:-}"
     mail_from=""
     if [ -n "$smtp_url" ]; then
-        ask mail_from "Remitente, p. ej. vericounts <no-reply@ejemplo.es>" "${VERICOUNTS_MAIL_FROM:-}"
+        ask mail_from "Remitente, p. ej. vericount <no-reply@ejemplo.es>" "${VERICOUNT_MAIL_FROM:-}"
         [ -n "$mail_from" ] || die "con SMTP hace falta un remitente"
     fi
     for value in "$public_url" "$admin_email" "$smtp_url" "$mail_from"; do
@@ -361,8 +361,8 @@ do_install() {
     done
 
     say ""
-    DATABASE_URL=${VERICOUNTS_DATABASE_URL:-}
-    MIGRATION_DATABASE_URL=${VERICOUNTS_MIGRATION_DATABASE_URL:-}
+    DATABASE_URL=${VERICOUNT_DATABASE_URL:-}
+    MIGRATION_DATABASE_URL=${VERICOUNT_MIGRATION_DATABASE_URL:-}
     if [ -n "$DATABASE_URL" ] && [ -n "$MIGRATION_DATABASE_URL" ]; then
         db_mode=existing
     elif [ "$ASSUME_YES" != 1 ] && confirm "¿Usar un PostgreSQL que ya tienes en lugar de uno local?"; then
@@ -385,7 +385,7 @@ do_install() {
     fi
     release=$(install_release "$(fetch_release "$version")")
     activate_release "$release"
-    ok "vericounts $release instalado en $PREFIX"
+    ok "vericount $release instalado en $PREFIX"
 
     if [ "$db_mode" = local ]; then
         install_postgres
@@ -403,20 +403,20 @@ do_install() {
 # Owner of the database schema, used by setup.sh to run migrations, and
 # the server's role, which they make a member of vericounts_app.
 DATABASE_URL='$MIGRATION_DATABASE_URL'
-VERICOUNTS_APP_ROLE='$app_role'
-VERICOUNTS_SETUP_DATABASE='$db_mode'
+VERICOUNT_APP_ROLE='$app_role'
+VERICOUNT_SETUP_DATABASE='$db_mode'
 EOF
     cat >"$ENV_FILE" <<EOF
-# vericounts settings, read by the systemd service. After a change:
-#   systemctl restart vericounts
+# vericount settings, read by the systemd service. After a change:
+#   systemctl restart vericount
 # All settings are described in the README.
 DATABASE_URL='$DATABASE_URL'
-VERICOUNTS_ADDR='127.0.0.1:$port'
-VERICOUNTS_PUBLIC_URL='$public_url'
-VERICOUNTS_WEB_DIR='$PREFIX/current/web'
-VERICOUNTS_SMTP_URL='$smtp_url'
-VERICOUNTS_MAIL_FROM='$mail_from'
-VERICOUNTS_AEAT_ENV='test'
+VERICOUNT_ADDR='127.0.0.1:$port'
+VERICOUNT_PUBLIC_URL='$public_url'
+VERICOUNT_WEB_DIR='$PREFIX/current/web'
+VERICOUNT_SMTP_URL='$smtp_url'
+VERICOUNT_MAIL_FROM='$mail_from'
+VERICOUNT_AEAT_ENV='test'
 EOF
     umask 022
     chown root:root "$MIGRATE_FILE"
@@ -428,7 +428,7 @@ EOF
     migrate
     [ "$db_mode" = local ] && finish_local_database
     write_unit
-    systemctl enable vericounts >/dev/null 2>&1
+    systemctl enable vericount >/dev/null 2>&1
     restart_service
 
     if [ -n "$admin_email" ]; then
@@ -439,25 +439,25 @@ EOF
     say "${BOLD}Siguientes pasos${RESET}"
     say "- Publica http://127.0.0.1:$port con HTTPS en $public_url (Caddy, nginx…)."
     [ -n "$admin_email" ] && say "- Entra en $public_url con $admin_email: recibirás un código para crear tu cuenta."
-    [ -z "$smtp_url" ] && say "- Sin SMTP, los códigos están en: journalctl -u vericounts -e"
+    [ -z "$smtp_url" ] && say "- Sin SMTP, los códigos están en: journalctl -u vericount -e"
     say "- La configuración de la AEAT y el certificado se ponen en $ENV_FILE (mira el README)."
     say "- Para actualizar o desinstalar, vuelve a ejecutar este instalador."
 }
 
 do_update() {
     require_systemd
-    installed || die "vericounts no está instalado"
+    installed || die "vericount no está instalado"
     local current version release
     current=$(installed_version)
     version=$VERSION
-    if [ -z "$version" ] && [ -z "${VERICOUNTS_ARCHIVE:-}" ]; then
+    if [ -z "$version" ] && [ -z "${VERICOUNT_ARCHIVE:-}" ]; then
         version=$(latest_version)
         [ -n "$version" ] || die "no se encuentra ninguna versión publicada de $REPO"
     fi
     if [ "$version" = "$current" ]; then
         confirm "La versión $current ya está instalada. ¿Reinstalarla?" || return 0
     else
-        confirm "¿Actualizar vericounts de $current a ${version:-la del archivo}?" || return 0
+        confirm "¿Actualizar vericount de $current a ${version:-la del archivo}?" || return 0
     fi
     release=$(install_release "$(fetch_release "$version")")
     activate_release "$release"
@@ -467,16 +467,16 @@ do_update() {
         prune_releases
     else
         warn "La versión anterior sigue en $PREFIX/releases/$current; para volver a ella:"
-        warn "  ln -sfn $PREFIX/releases/$current $PREFIX/current && systemctl restart vericounts"
+        warn "  ln -sfn $PREFIX/releases/$current $PREFIX/current && systemctl restart vericount"
         warn "Las migraciones nuevas ya están aplicadas y no se deshacen."
         exit 1
     fi
 }
 
 do_uninstall() {
-    installed || [ -f "$UNIT_FILE" ] || die "vericounts no está instalado"
-    confirm "¿Desinstalar vericounts?" || return 0
-    systemctl disable --now vericounts >/dev/null 2>&1 || true
+    installed || [ -f "$UNIT_FILE" ] || die "vericount no está instalado"
+    confirm "¿Desinstalar vericount?" || return 0
+    systemctl disable --now vericount >/dev/null 2>&1 || true
     rm -f "$UNIT_FILE"
     systemctl daemon-reload || true
     rm -rf "$PREFIX"
@@ -492,7 +492,7 @@ do_uninstall() {
         [ "$answer" = BORRAR ] && purge=1
     fi
     if [ "$purge" = 1 ]; then
-        if grep -q "^VERICOUNTS_SETUP_DATABASE='local'" "$MIGRATE_FILE" 2>/dev/null; then
+        if grep -q "^VERICOUNT_SETUP_DATABASE='local'" "$MIGRATE_FILE" 2>/dev/null; then
             drop_local_database
             ok "Base de datos borrada"
         else
@@ -511,7 +511,7 @@ do_uninstall() {
 menu() {
     local choice
     [ -n "$TTY" ] || die "sin terminal, indica la acción: install, update o uninstall"
-    say "${BOLD}vericounts${RESET}"
+    say "${BOLD}vericount${RESET}"
     if installed; then
         say "Instalado: versión $(installed_version) en $PREFIX"
         say "  1) Reinstalar o actualizar"
@@ -555,7 +555,7 @@ main() {
     command -v curl >/dev/null || die "hace falta curl"
     case "$ACTION" in
         install)
-            installed && die "vericounts ya está instalado; usa update o uninstall"
+            installed && die "vericount ya está instalado; usa update o uninstall"
             do_install
             ;;
         update) do_update ;;

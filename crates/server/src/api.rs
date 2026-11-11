@@ -16,7 +16,7 @@ use chrono_tz::{Europe::Madrid, Tz};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use vericounts_core::{
+use vericount_core::{
     invoice::{self, Line, LineInput, TaxBreakdown},
     qr,
 };

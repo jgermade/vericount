@@ -1,4 +1,4 @@
-// Typed client for the vericounts API. The UI only talks to the server
+// Typed client for the vericount API. The UI only talks to the server
 // through this module.
 
 import type {

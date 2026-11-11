@@ -3,7 +3,7 @@
 use std::{fmt, time::Duration};
 
 use reqwest::{header::CONTENT_TYPE, Identity};
-use vericounts_core::aeat::{self, ResponseError, SubmissionResponse};
+use vericount_core::aeat::{self, ResponseError, SubmissionResponse};
 
 #[derive(Debug)]
 pub enum SubmitError {

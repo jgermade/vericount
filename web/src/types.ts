@@ -1,4 +1,4 @@
-// Shapes of the vericounts API. Amounts are decimal strings, never
+// Shapes of the vericount API. Amounts are decimal strings, never
 // numbers, so that no precision is lost on the way.
 
 export type Amount = string

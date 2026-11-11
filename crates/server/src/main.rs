@@ -2,8 +2,8 @@ use std::{env, fs, sync::Arc, time::Duration};
 
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use tokio::net::TcpListener;
-use vericounts_core::aeat::{Party, SoftwareSystem};
-use vericounts_server::{
+use vericount_core::aeat::{Party, SoftwareSystem};
+use vericount_server::{
     aeat_client::AeatClient,
     auth, certificate,
     config::{self, Config, Startup},
@@ -14,17 +14,17 @@ use vericounts_server::{
     AppState, MIGRATOR,
 };
 
-const USAGE: &str = "usage: vericounts-server [serve|migrate|invite <email>|healthcheck|version]
+const USAGE: &str = "usage: vericount-server [serve|migrate|invite <email>|healthcheck|version]
 
   serve    Run the HTTP server (default). DATABASE_URL should use a role
            that is a member of vericounts_app.
   migrate  Apply the database migrations and exit. DATABASE_URL must use
            the role that owns the schema; on the first run it also needs
-           CREATEROLE. With VERICOUNTS_APP_ROLE=<role>, that login role is
+           CREATEROLE. With VERICOUNT_APP_ROLE=<role>, that login role is
            then made a member of vericounts_app, for the server to use.
   invite   Let an email address sign up, e.g. the first user. They sign
            up in the web client with a code sent to that address.
-  healthcheck  Exit with success if the server at VERICOUNTS_ADDR answers.
+  healthcheck  Exit with success if the server at VERICOUNT_ADDR answers.
                For container health checks, where there is no curl.
   version  Print the version.";
 
@@ -60,8 +60,8 @@ async fn migrate() -> Result<(), AnyError> {
     let (_, pool) = connect(1).await?;
     MIGRATOR.run(&pool).await?;
     println!("migrations applied");
-    if let Ok(role) = config::var("VERICOUNTS_APP_ROLE") {
-        if vericounts_server::grant_app_role(&pool, &role).await? {
+    if let Ok(role) = config::var("VERICOUNT_APP_ROLE") {
+        if vericount_server::grant_app_role(&pool, &role).await? {
             println!("{role} is now a member of vericounts_app");
         }
     }
@@ -69,7 +69,7 @@ async fn migrate() -> Result<(), AnyError> {
 }
 
 async fn healthcheck() -> Result<(), AnyError> {
-    let addr: std::net::SocketAddr = config::var("VERICOUNTS_ADDR")
+    let addr: std::net::SocketAddr = config::var("VERICOUNT_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
         .parse()?;
     // A server listening on every interface answers on loopback.
@@ -125,7 +125,7 @@ fn submitter(config: &Config) -> Result<Option<Arc<Submitter>>, AnyError> {
                 name: settings.producer_name,
                 nif: settings.producer_nif,
             },
-            name: "vericounts".to_owned(),
+            name: "vericount".to_owned(),
             id: "VC".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             installation_number: settings.installation_number,
@@ -202,7 +202,7 @@ async fn serve() -> Result<(), AnyError> {
     let listener = TcpListener::bind(startup.addr).await?;
     println!("listening on http://{}", listener.local_addr()?);
 
-    axum::serve(listener, vericounts_server::app(state, startup.web_dir))
+    axum::serve(listener, vericount_server::app(state, startup.web_dir))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

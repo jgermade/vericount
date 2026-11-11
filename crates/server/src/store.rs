@@ -9,7 +9,7 @@ use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::{FromRow, PgConnection, PgPool};
-use vericounts_core::{
+use vericount_core::{
     aeat::{Cancellation, Party, PreviousRecord, PreviousRejection, Record, Registration},
     hash::{self, CancellationFields, RegistrationFields},
     invoice::{self, Line, TaxBreakdown, Totals, ValidationError},
@@ -139,7 +139,7 @@ pub struct ChainError {
 /// ends.
 async fn lock_chain(conn: &mut PgConnection, issuer_nif: &str) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(format!("vericounts:chain:{issuer_nif}"))
+        .bind(format!("vericount:chain:{issuer_nif}"))
         .execute(conn)
         .await?;
     Ok(())

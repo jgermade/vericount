@@ -22,7 +22,7 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
-use vericounts_server::{
+use vericount_server::{
     auth,
     mail::{Mail, Mailer},
     AppState,
@@ -92,7 +92,7 @@ struct TestApp {
 impl TestApp {
     fn new(state: AppState, outbox: Arc<Mutex<Vec<Mail>>>) -> Self {
         Self {
-            app: vericounts_server::app(state, common::web_dir()),
+            app: vericount_server::app(state, common::web_dir()),
             outbox,
         }
     }
@@ -686,25 +686,25 @@ async fn passkeys_of_disabled_users_and_other_users_ceremonies_are_refused(pool:
 }
 
 /// Sends a real sign-in code through SMTP to a Mailpit server and reads it
-/// back from Mailpit's API. Runs when `VERICOUNTS_TEST_SMTP_URL` (e.g.
-/// `smtp://127.0.0.1:1025`) and `VERICOUNTS_TEST_MAILPIT_URL` (e.g.
+/// back from Mailpit's API. Runs when `VERICOUNT_TEST_SMTP_URL` (e.g.
+/// `smtp://127.0.0.1:1025`) and `VERICOUNT_TEST_MAILPIT_URL` (e.g.
 /// `http://127.0.0.1:8025`) are set; skipped otherwise, except in CI, where
 /// they are required.
 #[sqlx::test]
 async fn codes_go_through_smtp(pool: PgPool) {
     let (Ok(smtp_url), Ok(mailpit_url)) = (
-        env::var("VERICOUNTS_TEST_SMTP_URL"),
-        env::var("VERICOUNTS_TEST_MAILPIT_URL"),
+        env::var("VERICOUNT_TEST_SMTP_URL"),
+        env::var("VERICOUNT_TEST_MAILPIT_URL"),
     ) else {
         assert!(env::var_os("CI").is_none(), "Mailpit is required in CI");
-        eprintln!("skipped: VERICOUNTS_TEST_SMTP_URL and VERICOUNTS_TEST_MAILPIT_URL are not set");
+        eprintln!("skipped: VERICOUNT_TEST_SMTP_URL and VERICOUNT_TEST_MAILPIT_URL are not set");
         return;
     };
     // A fresh address, so earlier runs against the same Mailpit do not count.
     let email = format!("smtp-{}@example.com", auth::new_token().get(..12).unwrap());
     auth::invite(&pool, &email, None).await.unwrap();
     let (mut state, _) = common::state_with_outbox(pool);
-    state.mailer = Arc::new(Mailer::smtp(&smtp_url, "vericounts <no-reply@example.com>").unwrap());
+    state.mailer = Arc::new(Mailer::smtp(&smtp_url, "vericount <no-reply@example.com>").unwrap());
     let test = TestApp::new(state, Arc::default());
     assert_eq!(test.request_code(&email).await, StatusCode::ACCEPTED);
 

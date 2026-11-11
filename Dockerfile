@@ -1,4 +1,4 @@
-# vericounts image built from source: `docker build -t vericounts .`
+# vericount image built from source: `docker build -t vericount .`
 #
 # The server is a static (musl) binary, so the final image only holds it
 # and the web client, on a distroless base without a shell.
@@ -19,18 +19,18 @@ WORKDIR /src
 RUN rustup target add "$(uname -m)-unknown-linux-musl"
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
-RUN cargo build --release --locked -p vericounts-server --target "$(uname -m)-unknown-linux-musl" \
-    && cp "target/$(uname -m)-unknown-linux-musl/release/vericounts-server" /vericounts-server \
-    && strip /vericounts-server
+RUN cargo build --release --locked -p vericount-server --target "$(uname -m)-unknown-linux-musl" \
+    && cp "target/$(uname -m)-unknown-linux-musl/release/vericount-server" /vericount-server \
+    && strip /vericount-server
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=server /vericounts-server /usr/local/bin/vericounts-server
+COPY --from=server /vericount-server /usr/local/bin/vericount-server
 COPY --from=web /src/web/dist /app/web
-ENV VERICOUNTS_ADDR=0.0.0.0:8080 \
-    VERICOUNTS_WEB_DIR=/app/web
+ENV VERICOUNT_ADDR=0.0.0.0:8080 \
+    VERICOUNT_WEB_DIR=/app/web
 EXPOSE 8080
 USER nonroot
 HEALTHCHECK --interval=30s --timeout=6s --start-period=10s \
-    CMD ["/usr/local/bin/vericounts-server", "healthcheck"]
-ENTRYPOINT ["/usr/local/bin/vericounts-server"]
+    CMD ["/usr/local/bin/vericount-server", "healthcheck"]
+ENTRYPOINT ["/usr/local/bin/vericount-server"]
 CMD ["serve"]

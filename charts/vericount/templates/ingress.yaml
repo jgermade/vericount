@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "vericounts.fullname" . }}
+  name: {{ include "vericount.fullname" . }}
   labels:
-    {{- include "vericounts.labels" . | nindent 4 }}
+    {{- include "vericount.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -18,14 +18,14 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
-    - host: {{ include "vericounts.host" . | quote }}
+    - host: {{ include "vericount.host" . | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "vericounts.fullname" . }}
+                name: {{ include "vericount.fullname" . }}
                 port:
                   name: http
 {{- end }}

@@ -49,7 +49,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Release v$version"
-          git tag -a "v$version" -m "vericounts $version"
+          git tag -a "v$version" -m "vericount $version"
           git push origin HEAD:main "refs/tags/v$version"
 
   build:
@@ -75,7 +75,7 @@ jobs:
         run: |
           gh release create "v$VERSION" assets/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "vericounts $VERSION" \
+            --title "vericount $VERSION" \
             --generate-notes
 
   image:
@@ -97,8 +97,8 @@ jobs:
           VERSION: ${{ needs.bump.outputs.version }}
         run: |
           mkdir -p dist/amd64 dist/arm64
-          tar -C dist/amd64 -xzf "assets/vericounts-$VERSION-x86_64-linux.tar.gz"
-          tar -C dist/arm64 -xzf "assets/vericounts-$VERSION-aarch64-linux.tar.gz"
+          tar -C dist/amd64 -xzf "assets/vericount-$VERSION-x86_64-linux.tar.gz"
+          tar -C dist/arm64 -xzf "assets/vericount-$VERSION-aarch64-linux.tar.gz"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -108,7 +108,8 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          # The image is named after the project, not the repository.
+          images: ghcr.io/${{ github.repository_owner }}/vericount
           tags: |
             type=semver,pattern={{version}},value=v${{ needs.bump.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ needs.bump.outputs.version }}

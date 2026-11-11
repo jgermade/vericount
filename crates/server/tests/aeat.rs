@@ -11,11 +11,11 @@ use axum::http::StatusCode;
 use common::{get, post};
 use serde_json::{json, Value};
 use sqlx::PgPool;
-use vericounts_aeat_mock::{codes, Fault, Mock, SERVICE_PATH};
-use vericounts_core::aeat::{
+use vericount_aeat_mock::{codes, Fault, Mock, SERVICE_PATH};
+use vericount_core::aeat::{
     self, Operation, Party, Record, RecordStatus, ResponseError, SoftwareSystem, SubmissionStatus,
 };
-use vericounts_server::{
+use vericount_server::{
     aeat_client::{AeatClient, SubmitError},
     store,
 };
@@ -38,7 +38,7 @@ fn system() -> SoftwareSystem {
             name: "Example Software SL".to_owned(),
             nif: "B12345674".to_owned(),
         },
-        name: "vericounts".to_owned(),
+        name: "vericount".to_owned(),
         id: "VC".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         installation_number: "1".to_owned(),
@@ -220,7 +220,7 @@ mod worker {
     use std::sync::Arc;
 
     use super::*;
-    use vericounts_server::submission::{self, RunOutcome, Submitter};
+    use vericount_server::submission::{self, RunOutcome, Submitter};
 
     async fn submitter() -> (Mock, Submitter) {
         let (mock, client) = start_mock().await;
@@ -436,7 +436,7 @@ mod worker {
         let (_mock, submitter) = submitter().await;
         let mut state = common::state(pool.clone());
         state.submitter = Some(Arc::new(submitter));
-        let app = vericounts_server::app(state, common::web_dir());
+        let app = vericount_server::app(state, common::web_dir());
         post(&app, "/api/invoices", invoice_body()).await;
         let response = post(&app, "/api/aeat/submissions", json!({})).await;
         assert_eq!(response.status, StatusCode::OK);
@@ -449,7 +449,7 @@ mod worker {
 #[sqlx::test]
 async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
     use std::sync::Arc;
-    use vericounts_server::{certificate::CertificateInfo, submission::Submitter};
+    use vericount_server::{certificate::CertificateInfo, submission::Submitter};
 
     common::sign_in(&pool).await;
     common::seed(&pool).await;
@@ -467,7 +467,7 @@ async fn a_representative_and_the_certificate_are_declared(pool: PgPool) {
     });
     let mut state = common::state(pool.clone());
     state.submitter = Some(Arc::new(submitter));
-    let app = vericounts_server::app(state, common::web_dir());
+    let app = vericount_server::app(state, common::web_dir());
 
     post(&app, "/api/invoices", invoice_body()).await;
     let response = post(&app, "/api/aeat/submissions", json!({})).await.json();

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">vericounts</title>
+  <title id="title">vericount</title>
   <!-- An abacus whose beads are chained blocks; the chain draws a check mark. -->
   <defs>
     <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">

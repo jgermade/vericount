@@ -2,9 +2,9 @@
 # and is called by release.yml to build the release assets.
 #
 # Assets (artifact "release-assets"):
-#   vericounts-<version>-x86_64-linux.tar.gz, ...-aarch64-linux.tar.gz
+#   vericount-<version>-x86_64-linux.tar.gz, ...-aarch64-linux.tar.gz
 #     static server binary (bin/) and the built web client (web/)
-#   vericounts-<version>.tgz   Helm chart
+#   vericount-<version>.tgz   Helm chart
 #   setup.sh                   installer
 #   SHA256SUMS
 
@@ -55,8 +55,8 @@ jobs:
           - 8025:8025
     env:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-      VERICOUNTS_TEST_SMTP_URL: smtp://127.0.0.1:1025
-      VERICOUNTS_TEST_MAILPIT_URL: http://127.0.0.1:8025
+      VERICOUNT_TEST_SMTP_URL: smtp://127.0.0.1:1025
+      VERICOUNT_TEST_MAILPIT_URL: http://127.0.0.1:8025
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,11 +81,11 @@ jobs:
         run: shellcheck setup.sh docker/initdb/*.sh
       - name: Check the Helm chart
         run: |
-          helm lint charts/vericounts
-          helm template test charts/vericounts > /dev/null \
+          helm lint charts/vericount
+          helm template test charts/vericount > /dev/null \
             --set publicUrl=https://books.example.com \
-            --set database.url=postgres://app@db/vericounts \
-            --set database.migrationUrl=postgres://owner@db/vericounts
+            --set database.url=postgres://app@db/vericount \
+            --set database.migrationUrl=postgres://owner@db/vericount
 
   web:
     runs-on: ubuntu-latest
@@ -132,16 +132,16 @@ jobs:
           key: musl-${{ matrix.arch }}
       - name: Build
         run: |
-          cargo build --release --locked -p vericounts-server --target ${{ matrix.arch }}-unknown-linux-musl
+          cargo build --release --locked -p vericount-server --target ${{ matrix.arch }}-unknown-linux-musl
           mkdir -p out
-          cp target/${{ matrix.arch }}-unknown-linux-musl/release/vericounts-server out/
-          strip out/vericounts-server
-          file out/vericounts-server
-          ./out/vericounts-server version
+          cp target/${{ matrix.arch }}-unknown-linux-musl/release/vericount-server out/
+          strip out/vericount-server
+          file out/vericount-server
+          ./out/vericount-server version
       - uses: actions/upload-artifact@v4
         with:
           name: server-${{ matrix.arch }}
-          path: out/vericounts-server
+          path: out/vericount-server
           if-no-files-found: error
 
   package:
@@ -159,15 +159,15 @@ jobs:
           version=$(scripts/version.sh)
           mkdir -p assets
           for arch in x86_64 aarch64; do
-            root="pkg-$arch/vericounts"
+            root="pkg-$arch/vericount"
             mkdir -p "$root/bin"
-            install -m 0755 "artifacts/server-$arch/vericounts-server" "$root/bin/"
+            install -m 0755 "artifacts/server-$arch/vericount-server" "$root/bin/"
             cp -r artifacts/web "$root/web"
             cp README.md "$root/"
             echo "$version" > "$root/VERSION"
-            tar -C "pkg-$arch" -czf "assets/vericounts-$version-$arch-linux.tar.gz" vericounts
+            tar -C "pkg-$arch" -czf "assets/vericount-$version-$arch-linux.tar.gz" vericount
           done
-          helm package charts/vericounts --destination assets
+          helm package charts/vericount --destination assets
           cp setup.sh assets/
           (cd assets && sha256sum -- * > SHA256SUMS)
           ls -l assets

@@ -1,7 +1,7 @@
 use std::env;
 
 use tokio::net::TcpListener;
-use vericounts_aeat_mock::{Fault, Mock, SERVICE_PATH};
+use vericount_aeat_mock::{Fault, Mock, SERVICE_PATH};
 
 /// Runs the mock for local development.
 ///

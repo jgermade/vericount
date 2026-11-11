@@ -2,7 +2,7 @@
 
 Instructions for AI agents (and humans) working in this repository.
 
-vericounts is an application to keep the books of a Spanish SL and comply with Veri*factu. The current plan is the most recent roadmap in [`ROADMAP/`](ROADMAP/).
+vericount is an application to keep the books of a Spanish SL and comply with Veri*factu. The current plan is the most recent roadmap in [`ROADMAP/`](ROADMAP/).
 
 ## Language
 

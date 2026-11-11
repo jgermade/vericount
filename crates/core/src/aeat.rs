@@ -475,7 +475,7 @@ pub(crate) mod tests {
                 name: "Example Software SL".to_owned(),
                 nif: "B12345674".to_owned(),
             },
-            name: "vericounts".to_owned(),
+            name: "vericount".to_owned(),
             id: "VC".to_owned(),
             version: "0.1.0".to_owned(),
             installation_number: "1".to_owned(),

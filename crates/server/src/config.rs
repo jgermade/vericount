@@ -2,7 +2,7 @@
 
 use std::{env, net::SocketAddr};
 
-use vericounts_core::{invoice, qr::AeatEnvironment};
+use vericount_core::{invoice, qr::AeatEnvironment};
 use webauthn_rs::prelude::{Url, Webauthn, WebauthnBuilder};
 
 /// The company that issues the invoices, as stored in the `company` table.
@@ -47,19 +47,19 @@ fn required(name: &str) -> Result<String, String> {
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let aeat_environment = match var("VERICOUNTS_AEAT_ENV").as_deref() {
+        let aeat_environment = match var("VERICOUNT_AEAT_ENV").as_deref() {
             Err(_) | Ok("test") => AeatEnvironment::Test,
             Ok("production") => AeatEnvironment::Production,
             Ok(other) => {
                 return Err(format!(
-                    "VERICOUNTS_AEAT_ENV must be \"test\" or \"production\", got {other:?}"
+                    "VERICOUNT_AEAT_ENV must be \"test\" or \"production\", got {other:?}"
                 ))
             }
         };
         let public_url =
-            var("VERICOUNTS_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_owned());
+            var("VERICOUNT_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_owned());
         let public_url =
-            Url::parse(&public_url).map_err(|e| format!("VERICOUNTS_PUBLIC_URL: {e}"))?;
+            Url::parse(&public_url).map_err(|e| format!("VERICOUNT_PUBLIC_URL: {e}"))?;
         webauthn(&public_url)?;
         Ok(Self {
             aeat_environment,
@@ -75,30 +75,30 @@ impl Config {
 /// port is accepted, so the development server can be used too.
 pub fn webauthn(public_url: &Url) -> Result<Webauthn, String> {
     let Some(host) = public_url.domain() else {
-        return Err("VERICOUNTS_PUBLIC_URL must have a domain name, not an IP address".into());
+        return Err("VERICOUNT_PUBLIC_URL must have a domain name, not an IP address".into());
     };
     let localhost = host == "localhost";
     if public_url.scheme() != "https" && !localhost {
-        return Err("VERICOUNTS_PUBLIC_URL must use https outside localhost".into());
+        return Err("VERICOUNT_PUBLIC_URL must use https outside localhost".into());
     }
     WebauthnBuilder::new(host, public_url)
         .and_then(|builder| {
             builder
-                .rp_name("vericounts")
+                .rp_name("vericount")
                 .allow_any_port(localhost)
                 .build()
         })
-        .map_err(|e| format!("VERICOUNTS_PUBLIC_URL: {e}"))
+        .map_err(|e| format!("VERICOUNT_PUBLIC_URL: {e}"))
 }
 
 impl Startup {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            addr: var("VERICOUNTS_ADDR")
+            addr: var("VERICOUNT_ADDR")
                 .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
                 .parse()
-                .map_err(|e| format!("VERICOUNTS_ADDR: {e}"))?,
-            web_dir: var("VERICOUNTS_WEB_DIR").unwrap_or_else(|_| "web/dist".to_owned()),
+                .map_err(|e| format!("VERICOUNT_ADDR: {e}"))?,
+            web_dir: var("VERICOUNT_WEB_DIR").unwrap_or_else(|_| "web/dist".to_owned()),
             database_url: required("DATABASE_URL")?,
         })
     }
@@ -130,7 +130,7 @@ pub fn aeat_endpoint(
 }
 
 /// Settings for sending records to the AEAT. Sending is off unless
-/// `VERICOUNTS_AEAT_SUBMIT=1`.
+/// `VERICOUNT_AEAT_SUBMIT=1`.
 #[derive(Debug, Clone)]
 pub struct Submission {
     pub endpoint: String,
@@ -146,38 +146,38 @@ pub struct Submission {
 
 impl Submission {
     pub fn from_env(environment: AeatEnvironment) -> Result<Option<Self>, String> {
-        if var("VERICOUNTS_AEAT_SUBMIT").as_deref() != Ok("1") {
+        if var("VERICOUNT_AEAT_SUBMIT").as_deref() != Ok("1") {
             return Ok(None);
         }
         Ok(Some(Self {
-            endpoint: aeat_endpoint(environment, var("VERICOUNTS_AEAT_ENDPOINT").ok().as_deref())?,
-            identity_pem_path: var("VERICOUNTS_AEAT_IDENTITY_PEM").ok(),
+            endpoint: aeat_endpoint(environment, var("VERICOUNT_AEAT_ENDPOINT").ok().as_deref())?,
+            identity_pem_path: var("VERICOUNT_AEAT_IDENTITY_PEM").ok(),
             producer_name: invoice::validate_text(
-                "VERICOUNTS_SOFTWARE_PRODUCER_NAME",
-                &required("VERICOUNTS_SOFTWARE_PRODUCER_NAME")?,
+                "VERICOUNT_SOFTWARE_PRODUCER_NAME",
+                &required("VERICOUNT_SOFTWARE_PRODUCER_NAME")?,
             )
             .map_err(|e| e.to_string())?,
             producer_nif: invoice::validate_tax_id(
-                "VERICOUNTS_SOFTWARE_PRODUCER_NIF",
-                &required("VERICOUNTS_SOFTWARE_PRODUCER_NIF")?,
+                "VERICOUNT_SOFTWARE_PRODUCER_NIF",
+                &required("VERICOUNT_SOFTWARE_PRODUCER_NIF")?,
             )
             .map_err(|e| e.to_string())?,
-            installation_number: var("VERICOUNTS_INSTALLATION_NUMBER")
+            installation_number: var("VERICOUNT_INSTALLATION_NUMBER")
                 .unwrap_or_else(|_| "1".to_owned()),
             representative: match (
-                var("VERICOUNTS_AEAT_REPRESENTATIVE_NAME").ok(),
-                var("VERICOUNTS_AEAT_REPRESENTATIVE_NIF").ok(),
+                var("VERICOUNT_AEAT_REPRESENTATIVE_NAME").ok(),
+                var("VERICOUNT_AEAT_REPRESENTATIVE_NIF").ok(),
             ) {
                 (None, None) => None,
                 (Some(name), Some(nif)) => Some((
-                    invoice::validate_text("VERICOUNTS_AEAT_REPRESENTATIVE_NAME", &name)
+                    invoice::validate_text("VERICOUNT_AEAT_REPRESENTATIVE_NAME", &name)
                         .map_err(|e| e.to_string())?,
-                    invoice::validate_tax_id("VERICOUNTS_AEAT_REPRESENTATIVE_NIF", &nif)
+                    invoice::validate_tax_id("VERICOUNT_AEAT_REPRESENTATIVE_NIF", &nif)
                         .map_err(|e| e.to_string())?,
                 )),
                 _ => {
-                    return Err("set both VERICOUNTS_AEAT_REPRESENTATIVE_NAME and \
-                         VERICOUNTS_AEAT_REPRESENTATIVE_NIF, or neither"
+                    return Err("set both VERICOUNT_AEAT_REPRESENTATIVE_NAME and \
+                         VERICOUNT_AEAT_REPRESENTATIVE_NIF, or neither"
                         .to_owned())
                 }
             },
@@ -192,10 +192,10 @@ mod tests {
     #[test]
     fn empty_variables_are_unset() {
         // Names no other test uses, since tests share the environment.
-        env::set_var("VERICOUNTS_TEST_EMPTY", "");
-        env::set_var("VERICOUNTS_TEST_FULL", "x");
-        assert_eq!(var("VERICOUNTS_TEST_EMPTY"), Err(env::VarError::NotPresent));
-        assert_eq!(var("VERICOUNTS_TEST_FULL").as_deref(), Ok("x"));
+        env::set_var("VERICOUNT_TEST_EMPTY", "");
+        env::set_var("VERICOUNT_TEST_FULL", "x");
+        assert_eq!(var("VERICOUNT_TEST_EMPTY"), Err(env::VarError::NotPresent));
+        assert_eq!(var("VERICOUNT_TEST_FULL").as_deref(), Ok("x"));
     }
 
     #[test]

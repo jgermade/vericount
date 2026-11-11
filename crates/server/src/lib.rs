@@ -1,4 +1,4 @@
-//! HTTP server for vericounts: serves the web client and the API.
+//! HTTP server for vericount: serves the web client and the API.
 
 pub mod aeat_client;
 pub mod api;

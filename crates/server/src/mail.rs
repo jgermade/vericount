@@ -1,6 +1,6 @@
 //! Outgoing email: sign-in codes and invitations.
 //!
-//! Mail goes through SMTP when `VERICOUNTS_SMTP_URL` is set. Without it,
+//! Mail goes through SMTP when `VERICOUNT_SMTP_URL` is set. Without it,
 //! outside production, messages are written to standard error so the
 //! server can be tried locally. Tests keep them in memory.
 
@@ -12,7 +12,7 @@ use lettre::{
     message::{header::ContentType, Mailbox},
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
 };
-use vericounts_core::qr::AeatEnvironment;
+use vericount_core::qr::AeatEnvironment;
 
 pub use es::{invitation, sign_in_code};
 
@@ -38,19 +38,19 @@ pub enum Mailer {
 }
 
 impl Mailer {
-    /// Reads `VERICOUNTS_SMTP_URL` and `VERICOUNTS_MAIL_FROM`.
+    /// Reads `VERICOUNT_SMTP_URL` and `VERICOUNT_MAIL_FROM`.
     ///
     /// In production SMTP is required: sign-in codes must never end up in
     /// a log.
     pub fn from_env(environment: AeatEnvironment) -> Result<Self, String> {
-        match crate::config::var("VERICOUNTS_SMTP_URL") {
+        match crate::config::var("VERICOUNT_SMTP_URL") {
             Ok(url) => {
-                let from = crate::config::var("VERICOUNTS_MAIL_FROM")
-                    .map_err(|_| "VERICOUNTS_MAIL_FROM is required with VERICOUNTS_SMTP_URL")?;
+                let from = crate::config::var("VERICOUNT_MAIL_FROM")
+                    .map_err(|_| "VERICOUNT_MAIL_FROM is required with VERICOUNT_SMTP_URL")?;
                 Self::smtp(&url, &from)
             }
             Err(_) if environment == AeatEnvironment::Production => {
-                Err("VERICOUNTS_SMTP_URL is required in production".to_owned())
+                Err("VERICOUNT_SMTP_URL is required in production".to_owned())
             }
             Err(_) => Ok(Self::Log),
         }
@@ -58,13 +58,13 @@ impl Mailer {
 
     /// An SMTP mailer. `url` is e.g. `smtps://user:password@smtp.example.com`,
     /// or `smtp://127.0.0.1:1025` for a local Mailpit; `from` is e.g.
-    /// `vericounts <no-reply@example.com>`.
+    /// `vericount <no-reply@example.com>`.
     pub fn smtp(url: &str, from: &str) -> Result<Self, String> {
         let from = from
             .parse()
-            .map_err(|e| format!("VERICOUNTS_MAIL_FROM: {e}"))?;
+            .map_err(|e| format!("VERICOUNT_MAIL_FROM: {e}"))?;
         let transport = AsyncSmtpTransport::<Tokio1Executor>::from_url(url)
-            .map_err(|e| format!("VERICOUNTS_SMTP_URL: {e}"))?
+            .map_err(|e| format!("VERICOUNT_SMTP_URL: {e}"))?
             .build();
         Ok(Self::Smtp { transport, from })
     }

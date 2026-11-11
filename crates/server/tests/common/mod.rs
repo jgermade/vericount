@@ -19,8 +19,8 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use sqlx::PgPool;
 use tower::ServiceExt;
-use vericounts_core::qr::AeatEnvironment;
-use vericounts_server::{
+use vericount_core::qr::AeatEnvironment;
+use vericount_server::{
     config::{self, Config, Issuer},
     mail::{Mail, Mailer},
     AppState,
@@ -108,7 +108,7 @@ pub fn state(pool: PgPool) -> AppState {
 
 /// The application without any user or session.
 pub fn app_signed_out(pool: PgPool) -> Router {
-    vericounts_server::app(state(pool), web_dir())
+    vericount_server::app(state(pool), web_dir())
 }
 
 /// Creates a user with an open session; `request` sends its cookie.
@@ -125,7 +125,7 @@ pub async fn sign_in(pool: &PgPool) {
          VALUES ($1, $2, now() + interval '1 hour')",
     )
     .bind(user_id)
-    .bind(vericounts_server::auth::token_hash(TEST_TOKEN))
+    .bind(vericount_server::auth::token_hash(TEST_TOKEN))
     .execute(pool)
     .await
     .unwrap();

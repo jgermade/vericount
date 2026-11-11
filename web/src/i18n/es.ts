@@ -4,7 +4,7 @@
 import type { AeatState } from "../types"
 
 export const es = {
-  appName: "vericounts",
+  appName: "vericount",
   back: "Volver",
   signOut: "Salir",
   save: "Guardar",
@@ -25,7 +25,7 @@ export const es = {
     resendIn: (seconds: number) => `Podrás pedir otro código en ${seconds} s`,
     otherEmail: "Usar otro correo",
     invitedOnly: "Para crear una cuenta, alguien con acceso tiene que invitarte desde Ajustes.",
-    welcome: "Cuenta creada. Te damos la bienvenida a vericounts.",
+    welcome: "Cuenta creada. Te damos la bienvenida a vericount.",
     offerTitle: "Entra más rápido la próxima vez",
     offer:
       "Crea una passkey en este dispositivo: entrarás con tu huella, tu cara o el bloqueo de pantalla, sin esperar ningún código.",
