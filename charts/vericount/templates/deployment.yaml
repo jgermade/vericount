@@ -1,0 +1,166 @@
+{{- if and (eq .Values.aeat.environment "production") (not .Values.existingSecret) (not .Values.smtp.url) }}
+{{- fail "smtp.url is required in production: sign-in codes are sent by email" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vericount.fullname" . }}
+  labels:
+    {{- include "vericount.labels" . | nindent 4 }}
+spec:
+  # One instance only: two would send the same records to the AEAT twice.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vericount.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vericount.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if not .Values.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Applies the migrations with the owner role. They take a lock, so
+        # running them on every start is safe.
+        - name: migrate
+          image: {{ include "vericount.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vericount.secretName" . }}
+                  key: migration-database-url
+            {{- with .Values.database.appRole }}
+            - name: VERICOUNT_APP_ROLE
+              value: {{ . | quote }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: server
+          image: {{ include "vericount.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vericount.secretName" . }}
+                  key: database-url
+            - name: VERICOUNT_PUBLIC_URL
+              value: {{ required "publicUrl is required" .Values.publicUrl | quote }}
+            - name: VERICOUNT_SMTP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vericount.secretName" . }}
+                  key: smtp-url
+                  optional: true
+            {{- with .Values.smtp.from }}
+            - name: VERICOUNT_MAIL_FROM
+              value: {{ . | quote }}
+            {{- end }}
+            - name: VERICOUNT_AEAT_ENV
+              value: {{ .Values.aeat.environment | quote }}
+            {{- if .Values.aeat.submit }}
+            - name: VERICOUNT_AEAT_SUBMIT
+              value: "1"
+            {{- end }}
+            {{- with .Values.aeat.endpoint }}
+            - name: VERICOUNT_AEAT_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.aeat.identitySecret }}
+            - name: VERICOUNT_AEAT_IDENTITY_PEM
+              value: /etc/vericount/aeat/identity.pem
+            {{- end }}
+            {{- with .Values.aeat.representative }}
+            {{- if .name }}
+            - name: VERICOUNT_AEAT_REPRESENTATIVE_NAME
+              value: {{ .name | quote }}
+            - name: VERICOUNT_AEAT_REPRESENTATIVE_NIF
+              value: {{ .nif | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.aeat.softwareProducer }}
+            {{- if .name }}
+            - name: VERICOUNT_SOFTWARE_PRODUCER_NAME
+              value: {{ .name | quote }}
+            - name: VERICOUNT_SOFTWARE_PRODUCER_NIF
+              value: {{ .nif | quote }}
+            {{- end }}
+            {{- end }}
+            - name: VERICOUNT_INSTALLATION_NUMBER
+              value: {{ .Values.aeat.installationNumber | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          {{- if .Values.aeat.identitySecret }}
+          volumeMounts:
+            - name: aeat-identity
+              mountPath: /etc/vericount/aeat
+              readOnly: true
+          {{- end }}
+      {{- if .Values.aeat.identitySecret }}
+      volumes:
+        - name: aeat-identity
+          secret:
+            secretName: {{ .Values.aeat.identitySecret }}
+            defaultMode: 0400
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -13,7 +13,7 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
     PgPool,
 };
-use vericounts_core::hash::{self, CancellationFields, RegistrationFields};
+use vericount_core::hash::{self, CancellationFields, RegistrationFields};
 
 fn invoice_body() -> Value {
     json!({

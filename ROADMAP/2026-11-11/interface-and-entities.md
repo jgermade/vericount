@@ -17,8 +17,8 @@ Mobile first, with five entries in a bottom bar: Home, Invoices, Expenses, Conta
 | 5 | Contacts | Customers and suppliers in one list, with their tax data and what was invoiced to or spent with each. | `contacts` |
 | 6 | Expenses | Received invoices and receipts, with the supporting document attached, category, bases and VAT per rate and deductible percentage. | `expenses`, `expense_taxes`, `attachments`, `contacts` |
 | 7 | Taxes | VAT books per quarter, exportable for the accounting firm; indicative result of form 303; closing a quarter. | `invoice_taxes`, `expense_taxes`, `tax_periods` |
-| 8 | Settings | Company data printed on invoices, series, AEAT environment and certificate status, open sessions. The certificate is configured on the server, not uploaded. | `company`, `series`, `sessions` |
-| 9 | Sign-in | Username, password and second factor, with revocable sessions. | `users`, `sessions`, `events` |
+| 8 | Settings | Company data printed on invoices, series, AEAT environment and certificate status, the user's passkeys, users and invitations, open sessions. The certificate is configured on the server, not uploaded. | `company`, `series`, `passkeys`, `users`, `sessions` |
+| 9 | Sign-in | No passwords: a one-time code sent by email, or a passkey. Signing up is the first sign-in of an invited address. Revocable sessions. | `users`, `login_codes`, `passkeys`, `sessions`, `events` |
 
 ## Entities
 
@@ -29,7 +29,9 @@ Mobile first, with five entries in a bottom bar: Home, Invoices, Expenses, Conta
 | `aeat_submissions`, `aeat_submission_records` | Each request sent to the AEAT and the records it carried. | Insert-only | Exists |
 | `aeat_responses`, `aeat_record_results` | What came back for each request and for each record. The state of an invoice is derived from here. | Insert-only | Exists |
 | `events` | Event log: sign-ins, issued and cancelled invoices, submissions. | Insert-only | Exists |
-| `users`, `sessions` | Users with their password hash, and their sessions. Second factor still to be added. | Editable | Exists |
+| `users`, `sessions` | Users, identified by email address and invited by another user, and their sessions. No passwords. | Editable | Exists |
+| `login_codes` | One-time sign-in codes sent by email, stored hashed, with their guesses. | Editable (guesses, use) | Exists |
+| `passkeys`, `webauthn_ceremonies` | Users' passkeys (public key and counter), and the pending challenge of each registration or sign-in. | Editable, deletable | Exists |
 | `invoice_corrections` | Which invoice corrects which, and how (by substitution or by differences). | Insert-only | To do |
 | `company` | Name, NIF and address of the issuer. Replaces the current environment variables. | Editable | Exists |
 | `series` | Numbering series, their kind (regular or corrective) and whether they are active. | Editable, never deleted | Exists |
@@ -56,6 +58,9 @@ erDiagram
     expenses ||--o{ attachments : "proved by"
     tax_periods ||--o{ expenses : closes
     users ||--o{ sessions : opens
+    users ||--o{ login_codes : receives
+    users ||--o{ passkeys : owns
+    users ||--o{ users : invites
     users ||--o{ events : causes
 ```
 
@@ -69,6 +74,7 @@ The author accepted the recommended option for each open question:
 4. Several users from the start, without roles for now.
 5. The interface is in Spanish; code stays in English and the texts live in one translations file.
 6. Correcting a record ("subsanación") comes before 1 January 2027; corrective invoices come after.
+7. No passwords: sign-up and sign-in with a code sent by email, plus passkeys to make it easier (decided by the author later on 2026-11-11; it replaces the password and second factor planned for screen 9).
 
 ## Order
 

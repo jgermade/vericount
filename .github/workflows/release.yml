@@ -1,0 +1,124 @@
+# Manual release: bumps the version, builds with build.yml, publishes a
+# GitHub release with the assets, and pushes the Docker image to GHCR.
+#
+# Run it from main (Actions > Release > Run workflow). It pushes a
+# "Release vX.Y.Z" commit and the vX.Y.Z tag to main with the workflow's
+# token, so main must accept pushes from GitHub Actions.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Part of the version to increase
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Only from main
+        if: github.ref != 'refs/heads/main'
+        run: echo "Run the release from main" && exit 1
+      - uses: actions/checkout@v4
+      - id: bump
+        name: Bump the version
+        run: |
+          previous=$(scripts/version.sh)
+          version=$(scripts/version.sh "${{ inputs.version }}")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "$previous -> $version"
+          git diff --stat
+      - name: Commit and tag
+        run: |
+          version=${{ steps.bump.outputs.version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$version"
+          git tag -a "v$version" -m "vericount $version"
+          git push origin HEAD:main "refs/tags/v$version"
+
+  build:
+    needs: bump
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: v${{ needs.bump.outputs.version }}
+
+  github-release:
+    needs: [bump, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.bump.outputs.version }}
+        run: |
+          gh release create "v$VERSION" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "vericount $VERSION" \
+            --generate-notes
+
+  image:
+    needs: [bump, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.bump.outputs.version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+      - name: Unpack the binaries by Docker architecture
+        env:
+          VERSION: ${{ needs.bump.outputs.version }}
+        run: |
+          mkdir -p dist/amd64 dist/arm64
+          tar -C dist/amd64 -xzf "assets/vericount-$VERSION-x86_64-linux.tar.gz"
+          tar -C dist/arm64 -xzf "assets/vericount-$VERSION-aarch64-linux.tar.gz"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # The image is named after the project, not the repository.
+          images: ghcr.io/${{ github.repository_owner }}/vericount
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.bump.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.bump.outputs.version }}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/release.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

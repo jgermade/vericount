@@ -1,4 +1,4 @@
-// Typed client for the vericounts API. The UI only talks to the server
+// Typed client for the vericount API. The UI only talks to the server
 // through this module.
 
 import type {
@@ -12,9 +12,12 @@ import type {
   InvoiceInput,
   InvoicePreview,
   InvoiceSummary,
+  PasskeyChallenge,
+  PasskeyInfo,
   PeriodSummary,
   Series,
   Session,
+  UserInfo,
 } from "./types"
 
 export class ApiError extends Error {
@@ -53,8 +56,21 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
 
 export const api = {
   session: () => request<Session>("GET", "/session"),
-  signIn: (username: string, password: string) =>
-    request<Session>("POST", "/session", { username, password }),
+  /// Emails a sign-in code. The answer is the same whether the address
+  /// has an account or not.
+  requestCode: (email: string) => request<null>("POST", "/session/code", { email }),
+  signIn: (email: string, code: string) => request<Session>("POST", "/session", { email, code }),
+  passkeySignInOptions: () => request<PasskeyChallenge>("POST", "/session/passkey/options", {}),
+  passkeySignIn: (ceremony: string, credential: unknown) =>
+    request<Session>("POST", "/session/passkey", { ceremony, credential }),
+  listPasskeys: () => request<PasskeyInfo[]>("GET", "/passkeys"),
+  passkeyOptions: () => request<PasskeyChallenge>("POST", "/passkeys/options", {}),
+  addPasskey: (ceremony: string, name: string, credential: unknown) =>
+    request<PasskeyInfo>("POST", "/passkeys", { ceremony, name, credential }),
+  removePasskey: (id: number) => request<null>("DELETE", `/passkeys/${id}`),
+  listUsers: () => request<UserInfo[]>("GET", "/users"),
+  inviteUser: (email: string) => request<null>("POST", "/users", { email }),
+  removeUser: (id: number) => request<null>("DELETE", `/users/${id}`),
   signOut: () => request<null>("DELETE", "/session"),
   aeatQueue: () => request<AeatQueue>("GET", "/aeat"),
   summary: () => request<PeriodSummary>("GET", "/summary"),

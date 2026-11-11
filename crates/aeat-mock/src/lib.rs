@@ -31,7 +31,7 @@ use axum::{
 };
 use chrono::NaiveDate;
 use tokio::{io::AsyncWriteExt, process::Command};
-use vericounts_core::{
+use vericount_core::{
     aeat::soap_envelope,
     hash::{self, CancellationFields, RegistrationFields},
     xml::{self, Element, Writer},

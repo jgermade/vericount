@@ -7,7 +7,7 @@ use std::{fs, path::PathBuf};
 use axum::http::{HeaderMap, StatusCode};
 use common::web_dir;
 use sqlx::postgres::PgPoolOptions;
-use vericounts_server::security::CONTENT_SECURITY_POLICY_VALUE;
+use vericount_server::security::CONTENT_SECURITY_POLICY_VALUE;
 
 /// These tests never reach the database, so the pool is never connected.
 async fn get(path: &str) -> (StatusCode, HeaderMap) {

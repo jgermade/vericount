@@ -32,6 +32,17 @@ h1 {
   margin: 0;
 }
 
+.bar h1 {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.logo {
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
 h2 {
   font-size: 1.25rem;
 }
@@ -386,4 +397,9 @@ td.num {
 .tag.superseded {
   border-color: var(--muted);
   color: var(--muted);
+}
+
+/* "or" between the two ways of signing in. */
+.separator {
+  margin: 1rem 0 0.5rem;
 }

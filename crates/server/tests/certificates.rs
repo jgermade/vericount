@@ -2,7 +2,7 @@
 //! here with the subject attributes Spanish certificates carry.
 
 use rcgen::{CertificateParams, DnType, KeyPair};
-use vericounts_server::certificate::inspect;
+use vericount_server::certificate::inspect;
 
 /// Self-signed certificate and key in one PEM file, as the server expects.
 fn identity(attributes: &[(DnType, &str)]) -> String {
@@ -64,7 +64,7 @@ fn files_without_a_certificate_are_refused() {
 #[test]
 fn the_identity_file_is_accepted_by_the_client() {
     let pem = identity(&[(DnType::CommonName, "ROE JANE - 12345678Z")]);
-    vericounts_server::aeat_client::AeatClient::new(
+    vericount_server::aeat_client::AeatClient::new(
         "https://127.0.0.1:1/".to_owned(),
         Some(pem.as_bytes()),
     )

@@ -9,7 +9,7 @@ use std::{
 };
 
 use chrono::NaiveDate;
-use vericounts_core::{
+use vericount_core::{
     aeat::{self, Party, PreviousRejection, Record, Registration, SoftwareSystem},
     invoice::TaxBreakdown,
 };
@@ -34,7 +34,7 @@ fn xmllint_available() -> bool {
 
 /// Returns the output of `xmllint` when the document is not valid.
 fn validate(name: &str, xml: &str) -> Result<(), String> {
-    let file = env::temp_dir().join(format!("vericounts-{}-{name}.xml", std::process::id()));
+    let file = env::temp_dir().join(format!("vericount-{}-{name}.xml", std::process::id()));
     fs::write(&file, xml).unwrap();
     let output = Command::new("xmllint")
         .env("XML_CATALOG_FILES", schemas().join("catalog.xml"))
@@ -83,7 +83,7 @@ fn registration() -> Registration {
 fn system() -> SoftwareSystem {
     SoftwareSystem {
         producer: party("Example Software SL", "B12345674"),
-        name: "vericounts".to_owned(),
+        name: "vericount".to_owned(),
         id: "VC".to_owned(),
         version: "0.1.0".to_owned(),
         installation_number: "1".to_owned(),

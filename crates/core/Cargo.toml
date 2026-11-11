@@ -1,5 +1,5 @@
 [package]
-name = "vericounts-core"
+name = "vericount-core"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

@@ -1,9 +1,10 @@
-<script :setup="{ api, t, shell }: Props" lang="ts">
+<script :setup="{ api, t, shell, webauthn }: Props" lang="ts">
   import type { Api, ApiError } from "./api"
   import type { Texts } from "./i18n/es"
-  import type { AeatQueue, Company, Series, Shell } from "./types"
+  import type { AeatQueue, Company, PasskeyInfo, Series, Shell, UserInfo } from "./types"
+  import type { WebAuthn } from "./webauthn"
 
-  interface Props { api: Api; t: Texts; shell: Shell }
+  interface Props { api: Api; t: Texts; shell: Shell; webauthn: WebAuthn }
 
   let company: Company = { nif: "", name: "", address: "", postal_code: "", city: "" }
   let companyExists = false
@@ -14,10 +15,20 @@
   const day = (timestamp: string) => timestamp.slice(0, 10).split("-").reverse().join("/")
   let newSeries = { code: "", description: "" }
   let busy = false
+  let me = ""
+  let passkeys: PasskeyInfo[] = []
+  let users: UserInfo[] = []
+  let inviteEmail = ""
+  let passkeyNotice = ""
+  let userNotice = ""
+  let removingUser: UserInfo | null = null
+  const supported = webauthn.supported()
 
   const run = async (action: () => Promise<void>) => {
     busy = true
     saved = false
+    passkeyNotice = ""
+    userNotice = ""
     shell.clear()
     try {
       await action()
@@ -37,6 +48,9 @@
       if ((e as ApiError).code !== "company_missing") throw e
     }
     series = await api.listSeries()
+    me = (await api.session()).email
+    passkeys = await api.listPasskeys()
+    users = await api.listUsers()
     loaded = true
     // Only available once the company exists.
     if (companyExists) aeat = await api.aeatQueue()
@@ -54,6 +68,28 @@
   const toggleSeries = (item: Series) => run(async () => {
     await api.updateSeries(item.code, item.description, !item.active)
     series = await api.listSeries()
+  })
+
+  const addPasskey = () => run(async () => {
+    await webauthn.register(api, t.access.defaultName(webauthn.deviceName()))
+    passkeys = await api.listPasskeys()
+    passkeyNotice = t.access.passkeyAdded
+  })
+  const removePasskey = (item: PasskeyInfo) => run(async () => {
+    await api.removePasskey(item.id)
+    passkeys = await api.listPasskeys()
+  })
+  const invite = () => run(async () => {
+    const email = inviteEmail.trim().toLowerCase()
+    await api.inviteUser(email)
+    inviteEmail = ""
+    users = await api.listUsers()
+    userNotice = t.access.invited(email)
+  })
+  const removeUser = (item: UserInfo) => run(async () => {
+    await api.removeUser(item.id)
+    removingUser = null
+    users = await api.listUsers()
   })
 
   await $mounted()
@@ -115,6 +151,59 @@
       <input :value="newSeries.description" @input="newSeries.description = $event.target.value">
     </label>
     <button type="submit" :disabled="busy">{{ t.settings.addSeries }}</button>
+  </form>
+</section>
+
+<section :if="loaded" class="card">
+  <h3>{{ t.access.passkeysTitle }}</h3>
+  <p class="muted">{{ t.access.passkeysHelp }}</p>
+  <p :if="!passkeys.length" class="muted">{{ t.access.passkeysEmpty }}</p>
+  <ul class="list">
+    <li :each="item in passkeys" :key="item.id" class="row">
+      <span>
+        <strong>{{ item.name || t.access.defaultName("") }}</strong>
+        <br>
+        <span class="muted">
+          {{ t.access.created(day(item.created_at)) }}<span :if="item.last_used_at">, {{ t.access.lastUsed(day(item.last_used_at || "")) }}</span>
+        </span>
+      </span>
+      <button :disabled="busy" @click="removePasskey(item)">{{ t.access.remove }}</button>
+    </li>
+  </ul>
+  <button :if="supported" :disabled="busy" @click="addPasskey">{{ t.access.addPasskey }}</button>
+  <p :else class="muted">{{ t.access.passkeysUnsupported }}</p>
+  <p :if="passkeyNotice" class="muted" role="status">{{ passkeyNotice }}</p>
+</section>
+
+<section :if="loaded" class="card">
+  <h3>{{ t.access.usersTitle }}</h3>
+  <p class="muted">{{ t.access.usersHelp }}</p>
+  <ul class="list">
+    <li :each="item in users" :key="item.id" class="row">
+      <span>
+        <strong>{{ item.email }}</strong>
+        <span :if="item.email === me" class="tag">{{ t.access.you }}</span>
+        <span :if="!item.activated_at" class="tag">{{ t.access.pending }}</span>
+        <br>
+        <span class="muted">
+          {{ t.access.passkeyCount(item.passkeys) }}<span :if="item.invited_by">. {{ t.access.invitedBy(item.invited_by || "") }}</span>
+        </span>
+      </span>
+      <button :if="item.email !== me" :disabled="busy" @click="removingUser = item">{{ t.access.removeUser }}</button>
+    </li>
+  </ul>
+  <div :if="removingUser" class="notice" role="alert">
+    <p>{{ t.access.confirmRemoveUser(removingUser ? removingUser.email : "") }}</p>
+    <button class="danger" :disabled="busy" @click="removingUser && removeUser(removingUser)">{{ t.access.confirm }}</button>
+    <button :disabled="busy" @click="removingUser = null">{{ t.access.keep }}</button>
+  </div>
+  <form @submit.prevent="invite">
+    <label>{{ t.access.inviteEmail }}
+      <input required type="email" autocomplete="off" autocapitalize="none" :value="inviteEmail"
+        @input="inviteEmail = $event.target.value">
+    </label>
+    <button type="submit" :disabled="busy">{{ t.access.invite }}</button>
+    <span :if="userNotice" class="muted" role="status">{{ userNotice }}</span>
   </form>
 </section>
 

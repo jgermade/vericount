@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 use sqlx::PgPool;
 use tokio::sync::Mutex;
-use vericounts_core::aeat::{
+use vericount_core::aeat::{
     self, Operation, Party, Record, RecordStatus, ResponseError, SoftwareSystem, SubmissionStatus,
     MAX_RECORDS_PER_REQUEST,
 };
