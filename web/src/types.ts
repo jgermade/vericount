@@ -13,7 +13,7 @@ export interface LineInput {
 export interface InvoiceInput {
   series: string
   issue_date?: string
-  recipient: { name: string; nif: string }
+  contact_id: number
   description: string
   lines: LineInput[]
 }
@@ -90,6 +90,9 @@ export interface Invoice extends Totals {
   invoice_type: string
   recipient_name: string
   recipient_nif: string
+  issuer_address: string
+  recipient_address: string
+  contact_id: number | null
   description: string
   cancelled: boolean
   lines: Line[]
@@ -109,4 +112,43 @@ export interface ErrorBody {
   code: string
   message: string
   field?: string
+}
+
+export interface Company {
+  nif: string
+  name: string
+  address: string
+  postal_code: string
+  city: string
+}
+
+export interface Series {
+  code: string
+  description: string
+  active: boolean
+  invoices: number
+}
+
+export interface ContactInput {
+  name: string
+  nif: string
+  address: string
+  postal_code: string
+  city: string
+  email: string
+  is_customer: boolean
+  is_supplier: boolean
+  archived: boolean
+}
+
+export interface Contact extends ContactInput {
+  id: number
+  invoices: number
+}
+
+/// What every screen receives from the application shell.
+export interface Shell {
+  /// Shows an API error to the user, or the sign-in screen if the session ended.
+  fail: (error: unknown) => void
+  clear: () => void
 }

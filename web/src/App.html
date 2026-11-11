@@ -1,150 +1,71 @@
-<script :setup="{ api, t }: { api: Api; t: Texts }" lang="ts">
+<script :setup="{ api, t, describeError }: Props" lang="ts">
   import type { Api, ApiError } from "./api"
   import type { Texts } from "./i18n/es"
-  import type {
-    AeatQueue, Amount, ChainReport, Invoice, InvoiceInput, InvoicePreview, InvoiceSummary,
-    LineInput,
-  } from "./types"
+  import type { Shell } from "./types"
 
-  interface Form {
-    series: string
-    recipient_name: string
-    recipient_nif: string
-    description: string
-    lines: LineInput[]
+  interface Props {
+    api: Api
+    t: Texts
+    describeError: (t: Texts, error: unknown) => string
   }
 
-  type View = "loading" | "sign-in" | "list" | "new" | "detail"
+  type View = "loading" | "sign-in" | "invoices" | "contacts" | "settings"
 
-  const VAT_RATES = ["21", "10", "4"]
-  const money = new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" })
-  // Amounts are decimal strings; they are only turned into numbers to be shown.
-  const eur = (amount: Amount) => money.format(Number(amount))
-  const shortHash = (hash: string) => (hash ? `${hash.slice(0, 12)}…` : t.detail.firstRecord)
-  const stateClass = (state: string) => `tag ${state}`
-
-  const emptyLine = (): LineInput => ({ description: "", quantity: "1", unit_price: "", vat_rate: "21" })
-  const emptyForm = (): Form => ({
-    series: `A${new Date().getFullYear()}`,
-    recipient_name: "",
-    recipient_nif: "",
-    description: "",
-    lines: [emptyLine()],
-  })
+  const Invoices = await import("./Invoices.html")
+  const Contacts = await import("./Contacts.html")
+  const Settings = await import("./Settings.html")
 
   let view: View = "loading"
   let username = ""
   let credentials = { username: "", password: "" }
-  let invoices: InvoiceSummary[] = []
-  let invoice: Invoice | null = null
-  let form: Form = emptyForm()
-  let preview: InvoicePreview | null = null
-  let chain: ChainReport | null = null
-  let queue: AeatQueue | null = null
-  let confirmingCancel = false
   let error = ""
   let busy = false
 
-  // Turns an API error into a message in the user's language.
-  const describe = (e: unknown): string => {
-    const { code, field } = e as ApiError
-    if (code === undefined) return t.errors.network
-    if (code === "validation" && field) {
-      const name = field.replace(/^lines\[\d+\]\./, "").replace(/^description$/, m =>
-        field.startsWith("lines[") ? "description_line" : m)
-      return t.errors.validation(t.fields[name] ?? field)
-    }
-    const known = t.errors as unknown as Record<string, unknown>
-    const message = known[code]
-    return typeof message === "string" ? message : t.errors.unknown
+  // Given to every screen: how to report an error and how to clear it.
+  const shell: Shell = {
+    fail: (e: unknown) => {
+      const { status, code } = e as Partial<ApiError>
+      if (status === 401 && view !== "sign-in") view = "sign-in"
+      if (code === "company_missing") view = "settings"
+      error = describeError(t, e)
+    },
+    clear: () => {
+      error = ""
+    },
   }
 
-  const run = async (action: () => Promise<void>) => {
+  const go = (next: View) => {
+    error = ""
+    view = next
+  }
+  const signIn = async () => {
     busy = true
     error = ""
     try {
-      await action()
+      username = (await api.signIn(credentials.username, credentials.password)).username
+      credentials = { username: "", password: "" }
+      view = "invoices"
     } catch (e) {
-      if ((e as ApiError).status === 401 && view !== "sign-in") view = "sign-in"
-      error = describe(e)
+      error = describeError(t, e)
     } finally {
       busy = false
     }
   }
-
-  const payload = (): InvoiceInput => ({
-    series: form.series.trim().toUpperCase(),
-    recipient: { name: form.recipient_name, nif: form.recipient_nif },
-    description: form.description,
-    lines: form.lines.map(line => ({
-      description: line.description,
-      quantity: line.quantity.trim().replace(",", "."),
-      unit_price: line.unit_price.trim().replace(",", "."),
-      vat_rate: line.vat_rate,
-    })),
-  })
-
-  const showList = () => run(async () => {
-    invoices = await api.listInvoices()
-    chain = await api.verifyChain()
-    queue = await api.aeatQueue()
-    view = "list"
-  })
-  const signIn = () => run(async () => {
-    username = (await api.signIn(credentials.username, credentials.password)).username
-    credentials = { username: "", password: "" }
-    await showList()
-  })
-  const signOut = () => run(async () => {
-    await api.signOut()
+  const signOut = async () => {
+    try {
+      await api.signOut()
+    } catch (e) {
+      shell.fail(e)
+      return
+    }
     username = ""
-    invoices = []
-    invoice = null
-    view = "sign-in"
-  })
-  const showNew = () => {
-    error = ""
-    preview = null
-    view = "new"
+    go("sign-in")
   }
-  const showInvoice = (id: number) => run(async () => {
-    invoice = await api.getInvoice(id)
-    confirmingCancel = false
-    view = "detail"
-  })
-  const addLine = () => {
-    form.lines = [...form.lines, emptyLine()]
-    preview = null
-  }
-  const removeLine = (index: number) => {
-    form.lines = form.lines.filter((_, i) => i !== index)
-    preview = null
-  }
-  const setField = <T, K extends keyof T>(target: T, name: K, value: T[K]) => {
-    target[name] = value
-    preview = null
-  }
-  const review = () => run(async () => {
-    preview = await api.previewInvoice(payload())
-  })
-  const issue = () => run(async () => {
-    invoice = await api.createInvoice(payload())
-    form = emptyForm()
-    preview = null
-    confirmingCancel = false
-    view = "detail"
-  })
-  const cancel = () => run(async () => {
-    const current = invoice
-    if (!current) return
-    invoice = await api.cancelInvoice(current.id)
-    confirmingCancel = false
-  })
 
   await $mounted()
   try {
     username = (await api.session()).username
-    await showList()
+    view = "invoices"
   } catch {
     view = "sign-in"
   }
@@ -152,11 +73,7 @@
 
 <header class="bar">
   <h1>{{ t.appName }}</h1>
-  <div class="actions">
-    <button :if="view === 'list'" class="primary" @click="showNew">{{ t.list.newInvoice }}</button>
-    <button :if="view === 'new' || view === 'detail'" @click="showList">{{ t.back }}</button>
-    <button :if="username && view === 'list'" @click="signOut">{{ t.signOut }}</button>
-  </div>
+  <button :if="username && view !== 'sign-in'" @click="signOut">{{ t.signOut }}</button>
 </header>
 
 <p :if="error" class="error" role="alert">{{ error }}</p>
@@ -176,154 +93,12 @@
   </form>
 </main>
 
-<main :elseif="view === 'list'">
-  <p :if="chain && !chain.valid" class="error" role="alert">{{ t.list.chainBroken(chain.error.record_id) }}</p>
-  <p :elseif="chain" class="muted">{{ t.list.chainOk(chain.records) }}</p>
+<main :if="view === 'invoices'"><Invoices :api :t :shell /></main>
+<main :if="view === 'contacts'"><Contacts :api :t :shell /></main>
+<main :if="view === 'settings'"><Settings :api :t :shell /></main>
 
-  <p :if="queue && queue.rejected" class="error" role="alert">{{ t.list.aeatRejected(queue.rejected) }}</p>
-  <p :if="queue && queue.pending" class="muted">
-    {{ t.list.aeatPending(queue.pending) }}
-    <span :if="!queue.enabled">{{ t.list.aeatDisabled }}</span>
-    <span :if="queue.last_error">{{ t.list.aeatLastError(queue.last_error) }}</span>
-  </p>
-
-  <p :if="!invoices.length && !busy" class="muted">{{ t.list.empty }}</p>
-  <ul class="list">
-    <li :each="item in invoices" :key="item.id">
-      <button class="row" @click="showInvoice(item.id)">
-        <span>
-          <strong>{{ item.series_number }}</strong>
-          <span :class="stateClass(item.aeat_state)">{{ t.aeatState[item.aeat_state] }}</span>
-          <span :if="item.cancelled" class="tag">{{ t.list.cancelled }}</span>
-          <br>
-          <span class="muted">{{ item.issue_date }} · {{ item.recipient_name }}</span>
-        </span>
-        <span class="amount">{{ eur(item.total_amount) }}</span>
-      </button>
-    </li>
-  </ul>
-</main>
-
-<main :elseif="view === 'new'">
-  <h2>{{ t.form.title }}</h2>
-  <form @submit.prevent="review">
-    <label>{{ t.form.series }}
-      <input required maxlength="20" :value="form.series"
-        @input="setField(form, 'series', $event.target.value)">
-    </label>
-    <label>{{ t.form.customerName }}
-      <input required :value="form.recipient_name"
-        @input="setField(form, 'recipient_name', $event.target.value)">
-    </label>
-    <label>{{ t.form.customerNif }}
-      <input required maxlength="9" autocapitalize="characters" :value="form.recipient_nif"
-        @input="setField(form, 'recipient_nif', $event.target.value)">
-    </label>
-    <label>{{ t.form.description }}
-      <input required :value="form.description"
-        @input="setField(form, 'description', $event.target.value)">
-    </label>
-
-    <fieldset :each="line, index in form.lines">
-      <legend>{{ t.form.line(index + 1) }}</legend>
-      <label>{{ t.form.lineDescription }}
-        <input required :value="line.description"
-          @input="setField(line, 'description', $event.target.value)">
-      </label>
-      <div class="columns">
-        <label>{{ t.form.quantity }}
-          <input required inputmode="decimal" :value="line.quantity"
-            @input="setField(line, 'quantity', $event.target.value)">
-        </label>
-        <label>{{ t.form.unitPrice }}
-          <input required inputmode="decimal" :value="line.unit_price"
-            @input="setField(line, 'unit_price', $event.target.value)">
-        </label>
-        <label>{{ t.form.vat }}
-          <select :value="line.vat_rate" @change="setField(line, 'vat_rate', $event.target.value)">
-            <option :each="rate in VAT_RATES" :value="rate">{{ rate }}</option>
-          </select>
-        </label>
-      </div>
-      <button :if="form.lines.length > 1" type="button" @click="removeLine(index)">{{ t.form.removeLine }}</button>
-    </fieldset>
-
-    <div class="actions spread">
-      <button type="button" @click="addLine">{{ t.form.addLine }}</button>
-      <button type="submit" :disabled="busy">{{ t.form.review }}</button>
-    </div>
-  </form>
-
-  <section :if="preview" class="card">
-    <h3>{{ t.form.reviewTitle }}</h3>
-    <dl class="totals">
-      <dt>{{ t.totals.base }}</dt><dd>{{ eur(preview.total_base) }}</dd>
-      <div :each="tax in preview.taxes" class="pair">
-        <dt>{{ t.totals.vatOn(tax.vat_rate, eur(tax.base_amount)) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
-      </div>
-      <dt><strong>{{ t.totals.total }}</strong></dt><dd><strong>{{ eur(preview.total_amount) }}</strong></dd>
-    </dl>
-    <p class="muted">{{ t.form.irreversible }}</p>
-    <button class="primary" :disabled="busy" @click="issue">{{ t.form.issue }}</button>
-  </section>
-</main>
-
-<main :elseif="view === 'detail' && invoice">
-  <h2>
-    {{ t.detail.title(invoice.series_number) }}
-    <span :if="invoice.cancelled" class="tag">{{ t.list.cancelled }}</span>
-  </h2>
-  <dl class="fields">
-    <dt>{{ t.detail.date }}</dt><dd>{{ invoice.issue_date }}</dd>
-    <dt>{{ t.detail.issuer }}</dt><dd>{{ invoice.issuer_name }} ({{ invoice.issuer_nif }})</dd>
-    <dt>{{ t.detail.customer }}</dt><dd>{{ invoice.recipient_name }} ({{ invoice.recipient_nif }})</dd>
-    <dt>{{ t.detail.description }}</dt><dd>{{ invoice.description }}</dd>
-  </dl>
-
-  <ul class="list">
-    <li :each="line in invoice.lines" class="row">
-      <span>
-        {{ line.description }}<br>
-        <span class="muted">{{ line.quantity }} × {{ line.unit_price }} € · IVA {{ line.vat_rate }} %</span>
-      </span>
-      <span class="amount">{{ eur(line.base_amount) }}</span>
-    </li>
-  </ul>
-
-  <dl class="totals">
-    <dt>{{ t.totals.base }}</dt><dd>{{ eur(invoice.total_base) }}</dd>
-    <div :each="tax in invoice.taxes" class="pair">
-      <dt>{{ t.totals.vatOn(tax.vat_rate, eur(tax.base_amount)) }}</dt><dd>{{ eur(tax.tax_amount) }}</dd>
-    </div>
-    <dt><strong>{{ t.totals.total }}</strong></dt><dd><strong>{{ eur(invoice.total_amount) }}</strong></dd>
-  </dl>
-
-  <section class="card">
-    <h3>{{ t.detail.records }}</h3>
-    <ul class="list">
-      <li :each="record in invoice.records" :key="record.id">
-        <strong>{{ t.detail.recordType[record.record_type] }}</strong>
-        <span :class="stateClass(record.aeat.state)">{{ t.aeatState[record.aeat.state] }}</span>
-        <span class="muted">{{ record.generated_at }}</span><br>
-        <span :if="record.aeat.error_code" class="error-text">
-          {{ record.aeat.error_code }}: {{ record.aeat.error_description }}<br>
-        </span>
-        <code :title="record.hash">{{ shortHash(record.hash) }}</code>
-        <span class="muted">{{ t.detail.after }}</span>
-        <code :title="record.previous_hash">{{ shortHash(record.previous_hash) }}</code>
-      </li>
-    </ul>
-    <p><a :href="invoice.qr_url" rel="noopener noreferrer" target="_blank">{{ t.detail.qrLink }}</a></p>
-  </section>
-
-  <button :if="!invoice.cancelled && !confirmingCancel" class="danger" @click="confirmingCancel = true">
-    {{ t.detail.cancel }}
-  </button>
-  <section :if="confirmingCancel" class="card">
-    <p>{{ t.detail.confirmCancel(invoice.series_number) }}</p>
-    <div class="actions">
-      <button class="danger" :disabled="busy" @click="cancel">{{ t.detail.confirm }}</button>
-      <button @click="confirmingCancel = false">{{ t.detail.keep }}</button>
-    </div>
-  </section>
-</main>
+<nav :if="view === 'invoices' || view === 'contacts' || view === 'settings'" class="tabs">
+  <button :class.on="view === 'invoices'" @click="go('invoices')">{{ t.nav.invoices }}</button>
+  <button :class.on="view === 'contacts'" @click="go('contacts')">{{ t.nav.contacts }}</button>
+  <button :class.on="view === 'settings'" @click="go('settings')">{{ t.nav.settings }}</button>
+</nav>

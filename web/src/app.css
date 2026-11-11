@@ -17,7 +17,7 @@
 body {
   margin: 0 auto;
   max-width: 40rem;
-  padding: 0 1rem 3rem;
+  padding: 0 1rem 6rem;
 }
 
 .bar {
@@ -216,4 +216,56 @@ dd {
 code {
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
+}
+
+.columns.two {
+  grid-template-columns: 1fr 2fr;
+}
+
+label.check {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+}
+
+label.check input {
+  margin: 0;
+  min-height: 0;
+  width: auto;
+}
+
+.notice {
+  border: 1px solid var(--warn);
+  border-radius: 0.5rem;
+  color: var(--warn);
+  padding: 0.5rem 0.75rem;
+}
+
+.tabs {
+  background: Canvas;
+  border-top: 1px solid var(--border);
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  left: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  position: fixed;
+  right: 0;
+}
+
+.tabs button {
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  min-height: 3.25rem;
+}
+
+.tabs button.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.card form {
+  margin-top: 1rem;
 }

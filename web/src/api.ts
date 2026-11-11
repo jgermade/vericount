@@ -4,11 +4,15 @@
 import type {
   AeatQueue,
   ChainReport,
+  Company,
+  Contact,
+  ContactInput,
   ErrorBody,
   Invoice,
   InvoiceInput,
   InvoicePreview,
   InvoiceSummary,
+  Series,
   Session,
 } from "./types"
 
@@ -25,7 +29,7 @@ export class ApiError extends Error {
   }
 }
 
-type Method = "GET" | "POST" | "DELETE"
+type Method = "GET" | "POST" | "PUT" | "DELETE"
 
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {}
@@ -52,6 +56,17 @@ export const api = {
     request<Session>("POST", "/session", { username, password }),
   signOut: () => request<null>("DELETE", "/session"),
   aeatQueue: () => request<AeatQueue>("GET", "/aeat"),
+  company: () => request<Company>("GET", "/company"),
+  saveCompany: (company: Company) => request<Company>("PUT", "/company", company),
+  listSeries: () => request<Series[]>("GET", "/series"),
+  createSeries: (code: string, description: string) =>
+    request<Series>("POST", "/series", { code, description }),
+  updateSeries: (code: string, description: string, active: boolean) =>
+    request<Series>("PUT", `/series/${encodeURIComponent(code)}`, { description, active }),
+  listContacts: () => request<Contact[]>("GET", "/contacts"),
+  createContact: (contact: ContactInput) => request<Contact>("POST", "/contacts", contact),
+  updateContact: (id: number, contact: ContactInput) =>
+    request<Contact>("PUT", `/contacts/${id}`, contact),
   listInvoices: () => request<InvoiceSummary[]>("GET", "/invoices"),
   getInvoice: (id: number) => request<Invoice>("GET", `/invoices/${id}`),
   previewInvoice: (invoice: InvoiceInput) =>
