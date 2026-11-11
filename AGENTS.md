@@ -12,7 +12,7 @@ Allowed exceptions:
 
 - Official names of Spanish laws, bodies and legal concepts (e.g. Veri*factu, AEAT, NIF, Orden HAC/1177/2024). Add a short English explanation where it helps.
 - Identifiers and data defined by external specifications, such as AEAT WSDL/XSD element names and the fixtures that mirror them.
-- The texts shown to users. The interface is in Spanish, and all of its texts live in `web/src/i18n/es.ts`. Keys, identifiers and comments stay in English, and so do the API's error codes and messages; the client maps error codes to Spanish texts. The emails the server sends are in Spanish too, and their texts live in `crates/server/src/mail/es.rs`.
+- The texts shown to users. The interface is in Spanish, and all of its texts live in `web/src/i18n/es.ts`. Keys, identifiers and comments stay in English, and so do the API's error codes and messages; the client maps error codes to Spanish texts. The emails the server sends are in Spanish too, and their texts live in `crates/server/src/mail/es.rs`; so are the messages of the installer, `setup.sh`.
 
 ## Roadmaps: `ROADMAP/YYYY-MM-DD/`
 

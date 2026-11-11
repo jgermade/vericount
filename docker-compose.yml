@@ -1,0 +1,67 @@
+# vericounts with PostgreSQL. Copy .env.example to .env, fill it in, then:
+#
+#   docker compose up -d
+#   docker compose run --rm app invite you@example.com
+#
+# The client listens on 127.0.0.1:8080; put an HTTPS reverse proxy in front
+# of it and set VERICOUNTS_PUBLIC_URL to its address.
+
+x-image: &image ${VERICOUNTS_IMAGE:-ghcr.io/jgermade/vericounts:latest}
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vericounts
+      POSTGRES_USER: vericounts_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      VERICOUNTS_DB_PASSWORD: ${VERICOUNTS_DB_PASSWORD:?set VERICOUNTS_DB_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vericounts_owner -d vericounts"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Applies the migrations with the owner role, makes the server's role a
+  # member of vericounts_app, then exits.
+  migrate:
+    image: *image
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://vericounts_owner:${POSTGRES_PASSWORD}@db/vericounts
+      VERICOUNTS_APP_ROLE: vericounts
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: *image
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${VERICOUNTS_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://vericounts:${VERICOUNTS_DB_PASSWORD}@db/vericounts
+      VERICOUNTS_PUBLIC_URL: ${VERICOUNTS_PUBLIC_URL:-http://localhost:8080}
+      VERICOUNTS_SMTP_URL: ${VERICOUNTS_SMTP_URL:-}
+      VERICOUNTS_MAIL_FROM: ${VERICOUNTS_MAIL_FROM:-}
+      VERICOUNTS_AEAT_ENV: ${VERICOUNTS_AEAT_ENV:-test}
+      VERICOUNTS_AEAT_SUBMIT: ${VERICOUNTS_AEAT_SUBMIT:-}
+      VERICOUNTS_AEAT_IDENTITY_PEM: ${VERICOUNTS_AEAT_IDENTITY_PEM:-}
+      VERICOUNTS_AEAT_REPRESENTATIVE_NAME: ${VERICOUNTS_AEAT_REPRESENTATIVE_NAME:-}
+      VERICOUNTS_AEAT_REPRESENTATIVE_NIF: ${VERICOUNTS_AEAT_REPRESENTATIVE_NIF:-}
+      VERICOUNTS_SOFTWARE_PRODUCER_NAME: ${VERICOUNTS_SOFTWARE_PRODUCER_NAME:-}
+      VERICOUNTS_SOFTWARE_PRODUCER_NIF: ${VERICOUNTS_SOFTWARE_PRODUCER_NIF:-}
+    volumes:
+      # The AEAT client certificate, if any: set VERICOUNTS_AEAT_IDENTITY_PEM
+      # to /run/secrets/aeat/identity.pem and put the file in ./secrets.
+      - ./secrets:/run/secrets/aeat:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db:

@@ -32,13 +32,22 @@ pub struct Startup {
     pub database_url: String,
 }
 
+/// Reads an environment variable. An empty value counts as unset, as
+/// `.env` files and container settings often leave unused ones empty.
+pub fn var(name: &str) -> Result<String, env::VarError> {
+    match env::var(name) {
+        Ok(value) if value.is_empty() => Err(env::VarError::NotPresent),
+        other => other,
+    }
+}
+
 fn required(name: &str) -> Result<String, String> {
-    env::var(name).map_err(|_| format!("environment variable {name} is required"))
+    var(name).map_err(|_| format!("environment variable {name} is required"))
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, String> {
-        let aeat_environment = match env::var("VERICOUNTS_AEAT_ENV").as_deref() {
+        let aeat_environment = match var("VERICOUNTS_AEAT_ENV").as_deref() {
             Err(_) | Ok("test") => AeatEnvironment::Test,
             Ok("production") => AeatEnvironment::Production,
             Ok(other) => {
@@ -48,7 +57,7 @@ impl Config {
             }
         };
         let public_url =
-            env::var("VERICOUNTS_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_owned());
+            var("VERICOUNTS_PUBLIC_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_URL.to_owned());
         let public_url =
             Url::parse(&public_url).map_err(|e| format!("VERICOUNTS_PUBLIC_URL: {e}"))?;
         webauthn(&public_url)?;
@@ -85,11 +94,11 @@ pub fn webauthn(public_url: &Url) -> Result<Webauthn, String> {
 impl Startup {
     pub fn from_env() -> Result<Self, String> {
         Ok(Self {
-            addr: env::var("VERICOUNTS_ADDR")
+            addr: var("VERICOUNTS_ADDR")
                 .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
                 .parse()
                 .map_err(|e| format!("VERICOUNTS_ADDR: {e}"))?,
-            web_dir: env::var("VERICOUNTS_WEB_DIR").unwrap_or_else(|_| "web/dist".to_owned()),
+            web_dir: var("VERICOUNTS_WEB_DIR").unwrap_or_else(|_| "web/dist".to_owned()),
             database_url: required("DATABASE_URL")?,
         })
     }
@@ -137,15 +146,12 @@ pub struct Submission {
 
 impl Submission {
     pub fn from_env(environment: AeatEnvironment) -> Result<Option<Self>, String> {
-        if env::var("VERICOUNTS_AEAT_SUBMIT").as_deref() != Ok("1") {
+        if var("VERICOUNTS_AEAT_SUBMIT").as_deref() != Ok("1") {
             return Ok(None);
         }
         Ok(Some(Self {
-            endpoint: aeat_endpoint(
-                environment,
-                env::var("VERICOUNTS_AEAT_ENDPOINT").ok().as_deref(),
-            )?,
-            identity_pem_path: env::var("VERICOUNTS_AEAT_IDENTITY_PEM").ok(),
+            endpoint: aeat_endpoint(environment, var("VERICOUNTS_AEAT_ENDPOINT").ok().as_deref())?,
+            identity_pem_path: var("VERICOUNTS_AEAT_IDENTITY_PEM").ok(),
             producer_name: invoice::validate_text(
                 "VERICOUNTS_SOFTWARE_PRODUCER_NAME",
                 &required("VERICOUNTS_SOFTWARE_PRODUCER_NAME")?,
@@ -156,11 +162,11 @@ impl Submission {
                 &required("VERICOUNTS_SOFTWARE_PRODUCER_NIF")?,
             )
             .map_err(|e| e.to_string())?,
-            installation_number: env::var("VERICOUNTS_INSTALLATION_NUMBER")
+            installation_number: var("VERICOUNTS_INSTALLATION_NUMBER")
                 .unwrap_or_else(|_| "1".to_owned()),
             representative: match (
-                env::var("VERICOUNTS_AEAT_REPRESENTATIVE_NAME").ok(),
-                env::var("VERICOUNTS_AEAT_REPRESENTATIVE_NIF").ok(),
+                var("VERICOUNTS_AEAT_REPRESENTATIVE_NAME").ok(),
+                var("VERICOUNTS_AEAT_REPRESENTATIVE_NIF").ok(),
             ) {
                 (None, None) => None,
                 (Some(name), Some(nif)) => Some((
@@ -182,6 +188,15 @@ impl Submission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_variables_are_unset() {
+        // Names no other test uses, since tests share the environment.
+        env::set_var("VERICOUNTS_TEST_EMPTY", "");
+        env::set_var("VERICOUNTS_TEST_FULL", "x");
+        assert_eq!(var("VERICOUNTS_TEST_EMPTY"), Err(env::VarError::NotPresent));
+        assert_eq!(var("VERICOUNTS_TEST_FULL").as_deref(), Ok("x"));
+    }
 
     #[test]
     fn passkeys_need_a_domain_and_https() {

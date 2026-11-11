@@ -68,7 +68,7 @@
 </script>
 
 <header class="bar">
-  <h1>{{ t.appName }}</h1>
+  <h1><img class="logo" src="/logo.svg" alt="">{{ t.appName }}</h1>
   <button :if="email && view !== 'sign-in'" @click="signOut">{{ t.signOut }}</button>
 </header>
 

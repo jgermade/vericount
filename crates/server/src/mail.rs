@@ -6,10 +6,7 @@
 
 mod es;
 
-use std::{
-    env,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use lettre::{
     message::{header::ContentType, Mailbox},
@@ -46,9 +43,9 @@ impl Mailer {
     /// In production SMTP is required: sign-in codes must never end up in
     /// a log.
     pub fn from_env(environment: AeatEnvironment) -> Result<Self, String> {
-        match env::var("VERICOUNTS_SMTP_URL") {
+        match crate::config::var("VERICOUNTS_SMTP_URL") {
             Ok(url) => {
-                let from = env::var("VERICOUNTS_MAIL_FROM")
+                let from = crate::config::var("VERICOUNTS_MAIL_FROM")
                     .map_err(|_| "VERICOUNTS_MAIL_FROM is required with VERICOUNTS_SMTP_URL")?;
                 Self::smtp(&url, &from)
             }

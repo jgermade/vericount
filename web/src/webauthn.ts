@@ -51,6 +51,8 @@ export async function autofillAvailable(): Promise<boolean> {
 const rethrow = (error: unknown): never => {
   const name = (error as { name?: string }).name
   if (name === "NotAllowedError" || name === "AbortError") throw new PasskeyError("passkey_cancelled")
+  // No authenticator here can keep passkeys.
+  if (name === "NotSupportedError") throw new PasskeyError("passkey_unsupported")
   throw error
 }
 

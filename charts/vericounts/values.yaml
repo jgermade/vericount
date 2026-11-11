@@ -1,0 +1,81 @@
+image:
+  repository: ghcr.io/jgermade/vericounts
+  # The chart's appVersion by default.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Where users open vericounts, e.g. https://books.example.com. Required.
+# Passkeys are bound to its host name, so it must be https and a domain.
+publicUrl: ""
+
+# PostgreSQL is external: e.g. an operator such as PGO (which uses
+# pgBackRest) or a managed service. Two connections are needed:
+#   url           the server's login role, e.g. vericounts
+#   migrationUrl  the role that owns the schema, used by the migration
+#                 init container before the server starts. The first
+#                 migration creates the role vericounts_app, so on the first
+#                 install the owner needs CREATEROLE (it can be revoked after).
+# The init container makes appRole, the role of url, a member of
+# vericounts_app, which may only read and insert.
+database:
+  url: ""
+  migrationUrl: ""
+  appRole: vericounts
+
+# Mail for sign-in codes and invitations; required when aeat.environment
+# is production. E.g. smtps://user:password@smtp.example.com
+smtp:
+  url: ""
+  from: ""
+
+# Instead of the values above, an existing Secret with the keys
+# database-url, migration-database-url and, optionally, smtp-url.
+existingSecret: ""
+
+aeat:
+  # "test" or "production".
+  environment: test
+  # Send records to the AEAT.
+  submit: false
+  # Only in the test environment, e.g. a mock.
+  endpoint: ""
+  # Secret with the client certificate and key in one PEM file, under the
+  # key identity.pem.
+  identitySecret: ""
+  representative:
+    name: ""
+    nif: ""
+  softwareProducer:
+    name: ""
+    nif: ""
+  installationNumber: "1"
+
+# More environment variables for the server container.
+extraEnv: []
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Defaults to the host of publicUrl.
+  host: ""
+  # e.g. [{ secretName: vericounts-tls, hosts: [books.example.com] }]
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

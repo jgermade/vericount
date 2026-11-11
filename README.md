@@ -1,3 +1,5 @@
+<p align="center"><img src="web/public/logo-wordmark.svg" alt="vericounts" width="320"></p>
+
 # vericounts
 
 Bookkeeping for a Spanish SL with Veri*factu compliance. See the latest roadmap in [`ROADMAP/`](ROADMAP/) and the agent conventions in [`AGENTS.md`](AGENTS.md).
@@ -5,6 +7,65 @@ Bookkeeping for a Spanish SL with Veri*factu compliance. See the latest roadmap 
 ## Status
 
 Issued invoices can be created, listed and cancelled by a signed-in user. There are no passwords: invited users sign up and sign in with a code sent to their email, or with a passkey. Each one gets a Veri*factu billing record with a chained hash, stored in insert-only tables, and records are sent to the AEAT in order when sending is enabled. So far they have only been sent to the mock in `crates/aeat-mock`, never to the AEAT itself.
+
+## Install
+
+Three ways, all from the same [releases](https://github.com/jgermade/vericounts/releases): a static binary for Linux (x86_64 and aarch64) with the web client, a Docker image and a Helm chart. Each needs PostgreSQL and, in production, an SMTP server and HTTPS in front (passkeys need a domain name).
+
+### One line, on a Linux server with systemd
+
+```bash
+curl -fsSL https://github.com/jgermade/vericounts/releases/latest/download/setup.sh | sudo bash
+```
+
+A wizard (in Spanish) offers to **install** or, if vericounts is already there, to **reinstall/update** or **uninstall**:
+
+- **Install** asks for the public URL, the first user's email and SMTP; installs PostgreSQL locally (apt or dnf) or uses an existing one; downloads the release for the architecture and checks it against `SHA256SUMS`; installs it to `/opt/vericounts`, the settings to `/etc/vericounts/vericounts.env` and a hardened systemd service `vericounts` listening on `127.0.0.1`; runs the migrations and invites the first user.
+- **Update** installs the latest (or `--version`) release next to the current one, migrates, restarts and checks the service; the two previous versions are kept to go back.
+- **Uninstall** removes the program and the service, and keeps the configuration and the database unless `BORRAR` is typed: invoices must be kept for years.
+
+Without questions: `sudo bash setup.sh install --yes` (answers from environment variables, see the top of [`setup.sh`](setup.sh)), `update --yes [--version X.Y.Z]`, `uninstall --yes [--purge]`.
+
+### Docker
+
+[`docker-compose.yml`](docker-compose.yml) runs PostgreSQL, the migrations and the server (`ghcr.io/jgermade/vericounts`, a distroless image of about 25 MB with the static binary):
+
+```bash
+cp .env.example .env   # set the two passwords, the public URL and SMTP
+```
+
+```bash
+docker compose up -d
+```
+
+```bash
+docker compose run --rm app invite you@example.com
+```
+
+The client is then on `127.0.0.1:8080`, for an HTTPS reverse proxy. The AEAT certificate goes in `./secrets` (see `.env.example`). `docker build -t vericounts .` builds the same image from source.
+
+### Kubernetes (Helm)
+
+The chart in [`charts/vericounts`](charts/vericounts) (also attached to each release) runs one replica, with the migrations in an init container. PostgreSQL is external, e.g. an operator such as PGO with pgBackRest:
+
+```bash
+helm install vericounts https://github.com/jgermade/vericounts/releases/download/vX.Y.Z/vericounts-X.Y.Z.tgz \
+  --set publicUrl=https://books.example.com \
+  --set database.url=postgres://vericounts:...@db/vericounts \
+  --set database.migrationUrl=postgres://vericounts_owner:...@db/vericounts \
+  --set smtp.url=smtps://user:password@smtp.example.com --set smtp.from=no-reply@example.com \
+  --set ingress.enabled=true
+```
+
+All values are described in [`values.yaml`](charts/vericounts/values.yaml); `existingSecret` takes the connection URLs from a Secret instead.
+
+### Database roles
+
+The server connects with a login role that is a member of `vericounts_app`, which may only read and insert; the migrations run with the role that owns the schema. The first migration creates `vericounts_app`, so on the first run the owner needs `CREATEROLE` (it can be revoked afterwards). `migrate` with `VERICOUNTS_APP_ROLE=<role>` then makes the server's role a member. The installer, the compose file and the chart do all of this.
+
+## Releases
+
+Run **Actions → Release → Run workflow** on `main` and choose `patch`, `minor` or `major`. [`release.yml`](.github/workflows/release.yml) bumps the version (`scripts/version.sh`: Cargo and the chart), commits and tags `vX.Y.Z` on `main`, runs [`build.yml`](.github/workflows/build.yml) on the tag (tests, then the binaries, web client, chart and `setup.sh`), creates the GitHub release with those assets and `SHA256SUMS`, and pushes the image to GHCR as `X.Y.Z`, `X.Y` and `latest`. `build.yml` also runs on every pull request to `main` and every push to it.
 
 ## Development
 
@@ -55,7 +116,7 @@ To try the AEAT flow locally, run the mock with `AEAT_MOCK_SCHEMAS=aeat/schemas 
 
 `npm run dev` in `web/` serves the client with hot reload and proxies `/api` to the server.
 
-Configuration (environment variables):
+Configuration (environment variables; an empty value counts as unset):
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -73,6 +134,7 @@ Configuration (environment variables):
 | `VERICOUNTS_SMTP_URL` | none; required in production | SMTP server, e.g. `smtps://user:password@smtp.example.com` or `smtp://127.0.0.1:1025` |
 | `VERICOUNTS_MAIL_FROM` | required with SMTP | Sender, e.g. `vericounts <no-reply@example.com>` |
 | `VERICOUNTS_ADDR` | `127.0.0.1:8080` | Listen address |
+| `VERICOUNTS_APP_ROLE` | none | Only for `migrate`: the server's login role, made a member of `vericounts_app` |
 | `VERICOUNTS_WEB_DIR` | `web/dist` | Directory with the built web client |
 
 After signing in for the first time, enter the company data, a series and a customer in the interface; nothing can be invoiced before that.
@@ -99,3 +161,5 @@ Keep that file outside the repository, readable only by the server, and never co
 - `web`: web client built with jq79, TypeScript and Vite; components are precompiled so it runs under a strict CSP.
 - `crates/aeat-mock`: mock of the AEAT record submission service, for tests and local development.
 - `aeat/schemas`: official AEAT WSDL and XSD files.
+- `setup.sh`, `Dockerfile`, `docker/`, `docker-compose.yml`, `charts/vericounts`: installation and deployment.
+- `scripts/version.sh`: prints or bumps the version.

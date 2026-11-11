@@ -1,0 +1,10 @@
+vericounts {{ .Chart.AppVersion }} is starting at {{ .Values.publicUrl }}.
+
+Invite the first user; they sign up there with a code sent to that address:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "vericounts.fullname" . }} -- vericounts-server invite you@example.com
+{{- if and (not .Values.smtp.url) (not .Values.existingSecret) }}
+
+SMTP is not configured: sign-in codes are written to the server's log
+(kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "vericounts.fullname" . }}).
+{{- end }}

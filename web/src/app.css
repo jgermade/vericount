@@ -32,6 +32,17 @@ h1 {
   margin: 0;
 }
 
+.bar h1 {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.logo {
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
 h2 {
   font-size: 1.25rem;
 }

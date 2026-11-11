@@ -112,8 +112,10 @@
     try {
       finish(await webauthn.signIn(api, true, controller.signal))
     } catch (e) {
-      // Stopped on purpose, or dismissed: nothing to report.
-      if (!controller.signal.aborted && (e as { code?: string }).code !== "passkey_cancelled") {
+      // Stopped on purpose, dismissed, or no passkeys on this device:
+      // nothing to report, the email field still works.
+      const code = (e as { code?: string }).code
+      if (!controller.signal.aborted && code !== "passkey_cancelled" && code !== "passkey_unsupported") {
         shell.fail(e)
       }
     } finally {

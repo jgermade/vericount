@@ -110,6 +110,8 @@ Criteria: data in the EU, off-server backups, restore within hours, operational 
 3. Managed Postgres at a European provider and a separate binary.
 4. Kubernetes with a Postgres operator (PGO if pgBackRest is kept).
 
+Each release now ships what options 2 to 4 need (added on 2026-11-11): static Linux binaries with the `setup.sh` installer (systemd and a local or existing PostgreSQL), a Docker image with a Compose file, and a Helm chart for an external PostgreSQL. Where to deploy is still open.
+
 Also: the AEAT certificate encrypted and kept outside the repository; monitoring of AEAT submissions, chain verification and backups; and a data processing agreement if the SL belongs to someone else.
 
 ## 9. Plan (estimate)
