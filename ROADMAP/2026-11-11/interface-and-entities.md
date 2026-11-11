@@ -24,16 +24,16 @@ Mobile first, with five entries in a bottom bar: Home, Invoices, Expenses, Conta
 
 | Table | Content | Changes | Status |
 |---|---|---|---|
-| `invoices`, `invoice_lines`, `invoice_taxes` | Issued invoices with issuer and customer data copied at issue time. Addresses still to be added. | Insert-only | Exists |
+| `invoices`, `invoice_lines`, `invoice_taxes` | Issued invoices with issuer and customer data and addresses copied at issue time. | Insert-only | Exists |
 | `billing_records` | Veri*factu registration and cancellation records with their chained hash. | Insert-only | Exists |
 | `aeat_submissions`, `aeat_submission_records` | Each request sent to the AEAT and the records it carried. | Insert-only | Exists |
 | `aeat_responses`, `aeat_record_results` | What came back for each request and for each record. The state of an invoice is derived from here. | Insert-only | Exists |
 | `events` | Event log: sign-ins, issued and cancelled invoices, submissions. | Insert-only | Exists |
 | `users`, `sessions` | Users with their password hash, and their sessions. Second factor still to be added. | Editable | Exists |
 | `invoice_corrections` | Which invoice corrects which, and how (by substitution or by differences). | Insert-only | To do |
-| `company` | Name, NIF and address of the issuer. Replaces the current environment variables. | Editable | To do |
-| `series` | Numbering series, their kind (regular or corrective) and whether they are active. | Editable, never deleted | To do |
-| `contacts` | Customers and suppliers: name, NIF, address, email and role. | Editable | To do |
+| `company` | Name, NIF and address of the issuer. Replaces the current environment variables. | Editable | Exists |
+| `series` | Numbering series, their kind (regular or corrective) and whether they are active. | Editable, never deleted | Exists |
+| `contacts` | Customers and suppliers: name, NIF, address, email and role. | Editable | Exists |
 | `expenses`, `expense_taxes` | Received invoices and receipts. | Editable until the quarter is closed | To do |
 | `attachments` | Supporting documents of expenses. | Insert-only | To do |
 | `tax_periods` | Quarters and whether they are closed. | Can only be closed | To do |
