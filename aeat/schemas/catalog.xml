@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- Resolves the remote XML Signature schema to the local copy, so that
+     validation works offline. Use with XML_CATALOG_FILES. -->
+<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
+  <uri name="http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+  <system systemId="http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd" uri="xmldsig-core-schema.xsd"/>
+</catalog>

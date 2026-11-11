@@ -1,0 +1,389 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.4;
+  --border: color-mix(in srgb, currentColor 20%, transparent);
+  --muted: color-mix(in srgb, currentColor 60%, transparent);
+  --accent: #1d6fd8;
+  --danger: #c62828;
+  --ok: #1b7a4b;
+  --warn: #96600a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 0 1rem 6rem;
+}
+
+.bar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.25rem;
+}
+
+h3 {
+  font-size: 1rem;
+  margin-top: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: inherit;
+  cursor: pointer;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+main > button.danger {
+  margin-top: 1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+input,
+select {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: inherit;
+  display: block;
+  margin-top: 0.25rem;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+  width: 100%;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem;
+}
+
+.columns {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.actions.spread {
+  justify-content: space-between;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list > li {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+
+.row {
+  align-items: center;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  text-align: left;
+  width: 100%;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.tag {
+  border: 1px solid var(--danger);
+  border-radius: 0.25rem;
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: normal;
+  padding: 0 0.25rem;
+}
+
+.tag.accepted {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.tag.pending,
+.tag.accepted_with_errors {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 0.875rem;
+}
+
+.error {
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  color: var(--danger);
+  padding: 0.5rem 0.75rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
+}
+
+dl {
+  display: grid;
+  gap: 0.25rem 1rem;
+  grid-template-columns: auto 1fr;
+  margin: 1rem 0;
+}
+
+.pair {
+  display: contents;
+}
+
+dt {
+  color: var(--muted);
+}
+
+dd {
+  margin: 0;
+}
+
+.totals dd {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+code {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.columns.two {
+  grid-template-columns: 1fr 2fr;
+}
+
+label.check {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+}
+
+label.check input {
+  margin: 0;
+  min-height: 0;
+  width: auto;
+}
+
+.notice {
+  border: 1px solid var(--warn);
+  border-radius: 0.5rem;
+  color: var(--warn);
+  padding: 0.5rem 0.75rem;
+}
+
+.tabs {
+  background: Canvas;
+  border-top: 1px solid var(--border);
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  left: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  position: fixed;
+  right: 0;
+}
+
+.tabs button {
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  min-height: 3.25rem;
+}
+
+.tabs button.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.card form {
+  margin-top: 1rem;
+}
+
+button.wide {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+.tiles {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 1fr 1fr;
+}
+
+.tile {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+}
+
+.tile strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Printable invoice. The QR code is 40 mm wide, within the 30 to 40 mm
+   that the Veri*factu rules ask for. */
+.document {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.document-head,
+.parties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.parties > div {
+  flex: 1 1 12rem;
+}
+
+.qr {
+  font-size: 0.75rem;
+  margin: 0;
+  text-align: center;
+  width: 44mm;
+}
+
+.qr img {
+  background: #fff;
+  display: block;
+  height: 40mm;
+  margin: 0.25rem auto;
+  width: 40mm;
+}
+
+.stamp {
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  display: inline-block;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  text-align: left;
+}
+
+th.num,
+td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    max-width: none;
+    padding: 0;
+  }
+
+  body > #app > header,
+  .tabs,
+  .no-print,
+  .error {
+    display: none;
+  }
+
+  .document {
+    border: 0;
+    padding: 0;
+  }
+}
+
+.tag.superseded {
+  border-color: var(--muted);
+  color: var(--muted);
+}
