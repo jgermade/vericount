@@ -85,7 +85,7 @@ async fn records(pool: &PgPool) -> Vec<Record> {
 
 #[sqlx::test]
 async fn stored_records_are_accepted_by_the_mock(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     let first = post(&app, "/api/invoices", invoice_body()).await;
     assert_eq!(first.status, StatusCode::CREATED);
     post(&app, "/api/invoices", invoice_body()).await;
@@ -134,7 +134,7 @@ async fn stored_records_are_accepted_by_the_mock(pool: PgPool) {
 
 #[sqlx::test]
 async fn the_mock_rejects_wrong_hashes_and_broken_chains(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     for _ in 0..3 {
         post(&app, "/api/invoices", invoice_body()).await;
     }
@@ -169,7 +169,7 @@ async fn the_mock_rejects_wrong_hashes_and_broken_chains(pool: PgPool) {
 
 #[sqlx::test]
 async fn failures_are_reported_by_kind(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     post(&app, "/api/invoices", invoice_body()).await;
     let (mock, client) = start_mock().await;
     let request = aeat::submission_request(&issuer(), &system(), &records(&pool).await);
@@ -218,4 +218,162 @@ async fn failures_are_reported_by_kind(pool: PgPool) {
         unreachable.submit(&request).await,
         Err(SubmitError::Transport(_))
     ));
+}
+
+mod worker {
+    use std::sync::Arc;
+
+    use super::*;
+    use vericounts_server::submission::{self, RunOutcome, Submitter};
+
+    async fn submitter() -> (Mock, Submitter) {
+        let (mock, client) = start_mock().await;
+        (mock, Submitter::new(client, system()))
+    }
+
+    async fn run(pool: &PgPool, submitter: &Submitter) -> RunOutcome {
+        submission::run_once(pool, &common::issuer(), submitter)
+            .await
+            .unwrap()
+    }
+
+    fn sent(outcome: &RunOutcome) -> (usize, &str) {
+        match outcome {
+            RunOutcome::Sent {
+                records, outcome, ..
+            } => (*records, outcome),
+            other => panic!("expected a submission, got {other:?}"),
+        }
+    }
+
+    #[sqlx::test]
+    async fn pending_records_are_sent_and_their_state_is_shown(pool: PgPool) {
+        let app = common::app(pool.clone()).await;
+        let (mock, submitter) = submitter().await;
+        assert_eq!(run(&pool, &submitter).await, RunOutcome::NothingPending);
+
+        let first = post(&app, "/api/invoices", invoice_body()).await.json();
+        post(&app, "/api/invoices", invoice_body()).await;
+        assert_eq!(first["records"][0]["aeat"]["state"], "pending");
+        let status = get(&app, "/api/aeat").await.json();
+        assert_eq!(
+            (&status["enabled"], &status["pending"]),
+            (&json!(false), &json!(2))
+        );
+
+        assert_eq!(sent(&run(&pool, &submitter).await), (2, "accepted"));
+        assert_eq!(run(&pool, &submitter).await, RunOutcome::NothingPending);
+        assert_eq!(mock.requests().len(), 1);
+
+        let list = get(&app, "/api/invoices").await.json();
+        assert_eq!(list[0]["aeat_state"], "accepted");
+        let detail = get(&app, &format!("/api/invoices/{}", first["id"]))
+            .await
+            .json();
+        assert_eq!(detail["records"][0]["aeat"]["state"], "accepted");
+
+        // A later cancellation is a new pending record.
+        let path = format!("/api/invoices/{}/cancellation", first["id"]);
+        let cancelled = post(&app, &path, json!({})).await.json();
+        assert_eq!(cancelled["records"][0]["aeat"]["state"], "accepted");
+        assert_eq!(cancelled["records"][1]["aeat"]["state"], "pending");
+        let list = get(&app, "/api/invoices").await.json();
+        assert_eq!(list[1]["aeat_state"], "pending");
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
+        let status = get(&app, "/api/aeat").await.json();
+        assert_eq!(status["pending"], 0);
+        assert_eq!(status["last_outcome"], "accepted");
+
+        // Request and response are stored as exchanged.
+        let (request, response): (String, String) = sqlx::query_as(
+            "SELECT s.request_xml, r.response_xml FROM aeat_submissions s
+             JOIN aeat_responses r ON r.submission_id = s.id ORDER BY s.id LIMIT 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(request, mock.requests()[0]);
+        assert!(response.contains("RespuestaRegFactuSistemaFacturacion"));
+    }
+
+    #[sqlx::test]
+    async fn failed_attempts_are_recorded_and_retried(pool: PgPool) {
+        let app = common::app(pool.clone()).await;
+        let (mock, submitter) = submitter().await;
+        post(&app, "/api/invoices", invoice_body()).await;
+
+        mock.inject(Fault::HttpStatus(503));
+        mock.inject(Fault::SoapFault);
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "http_error"));
+        let status = get(&app, "/api/aeat").await.json();
+        assert_eq!(status["pending"], 1);
+        assert_eq!(status["last_error"], "HTTP 503");
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "fault"));
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
+
+        let outcomes: Vec<String> =
+            sqlx::query_scalar("SELECT outcome FROM aeat_responses ORDER BY submission_id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(outcomes, ["http_error", "fault", "accepted"]);
+    }
+
+    #[sqlx::test]
+    async fn a_rejected_record_blocks_the_queue(pool: PgPool) {
+        let app = common::app(pool.clone()).await;
+        let (mock, submitter) = submitter().await;
+        post(&app, "/api/invoices", invoice_body()).await;
+        assert_eq!(sent(&run(&pool, &submitter).await), (1, "accepted"));
+
+        // The mock forgets everything, as if the AEAT had lost the first
+        // record: the next one no longer follows an accepted record.
+        let (fresh_mock, fresh) = super::start_mock().await;
+        let fresh = Submitter::new(fresh, system());
+        let second = post(&app, "/api/invoices", invoice_body()).await.json();
+        post(&app, "/api/invoices", invoice_body()).await;
+        assert_eq!(sent(&run(&pool, &fresh).await), (2, "rejected"));
+
+        let record_id = second["records"][0]["id"].as_i64().unwrap();
+        assert_eq!(run(&pool, &fresh).await, RunOutcome::Blocked { record_id });
+        assert_eq!(
+            fresh_mock.requests().len(),
+            1,
+            "nothing is sent while blocked"
+        );
+        assert_eq!(mock.requests().len(), 1);
+
+        let detail = get(&app, &format!("/api/invoices/{}", second["id"]))
+            .await
+            .json();
+        assert_eq!(detail["records"][0]["aeat"]["state"], "rejected");
+        assert_eq!(
+            detail["records"][0]["aeat"]["error_code"],
+            codes::BROKEN_CHAIN.to_string()
+        );
+        let status = get(&app, "/api/aeat").await.json();
+        assert_eq!(
+            (&status["rejected"], &status["pending"]),
+            (&json!(2), &json!(0))
+        );
+    }
+
+    #[sqlx::test]
+    async fn submissions_can_be_requested_from_the_api_when_enabled(pool: PgPool) {
+        common::sign_in(&pool).await;
+        let disabled = common::app_signed_out(pool.clone());
+        let response = post(&disabled, "/api/aeat/submissions", json!({})).await;
+        assert_eq!(response.status, StatusCode::CONFLICT);
+
+        let (_mock, submitter) = submitter().await;
+        let mut state = common::state(pool.clone());
+        state.submitter = Some(Arc::new(submitter));
+        let app = vericounts_server::app(state, common::web_dir());
+        post(&app, "/api/invoices", invoice_body()).await;
+        let response = post(&app, "/api/aeat/submissions", json!({})).await;
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(response.json()["result"], "sent");
+        assert_eq!(response.json()["outcome"], "accepted");
+        assert_eq!(get(&app, "/api/aeat").await.json()["enabled"], true);
+    }
 }

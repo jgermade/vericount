@@ -15,7 +15,10 @@ use vericounts_core::{
     invoice::{self, Line, TaxBreakdown, Totals, ValidationError},
 };
 
-use crate::config::Issuer;
+use crate::{
+    config::Issuer,
+    submission::{self, RecordResult, RecordState},
+};
 
 /// Only standard invoices ("F1") are supported for now.
 pub const INVOICE_TYPE: &str = "F1";
@@ -55,6 +58,9 @@ pub struct NewInvoice {
 #[derive(Debug, Serialize, FromRow)]
 pub struct InvoiceSummary {
     pub id: i64,
+    /// Worst AEAT state among the records of the invoice.
+    #[sqlx(skip)]
+    pub aeat_state: Option<RecordState>,
     pub series_number: String,
     pub issue_date: NaiveDate,
     pub recipient_name: String,
@@ -87,6 +93,8 @@ pub struct Invoice {
 #[derive(Debug, Serialize, FromRow)]
 pub struct BillingRecord {
     pub id: i64,
+    #[sqlx(skip)]
+    pub aeat: Option<RecordResult>,
     pub record_type: String,
     pub previous_hash: String,
     pub hash: String,
@@ -318,14 +326,30 @@ pub async fn list_invoices(
     pool: &PgPool,
     issuer_nif: &str,
 ) -> Result<Vec<InvoiceSummary>, StoreError> {
-    Ok(sqlx::query_as(&format!(
+    let mut invoices: Vec<InvoiceSummary> = sqlx::query_as(&format!(
         "SELECT id, series_number, issue_date, recipient_name, total_amount,
                 {CANCELLED} AS cancelled
          FROM invoices i WHERE issuer_nif = $1 ORDER BY id DESC"
     ))
     .bind(issuer_nif)
     .fetch_all(pool)
-    .await?)
+    .await?;
+
+    let results = submission::record_results(pool, issuer_nif).await?;
+    let records: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT invoice_id, id FROM billing_records WHERE issuer_nif = $1")
+            .bind(issuer_nif)
+            .fetch_all(pool)
+            .await?;
+    for invoice in &mut invoices {
+        invoice.aeat_state = Some(RecordState::worst(
+            records
+                .iter()
+                .filter(|(invoice_id, _)| *invoice_id == invoice.id)
+                .map(|(_, id)| results.get(id).map_or(RecordState::Pending, |r| r.state)),
+        ));
+    }
+    Ok(invoices)
 }
 
 pub async fn get_invoice(
@@ -379,13 +403,21 @@ pub async fn get_invoice(
     })
     .collect();
 
-    let records: Vec<BillingRecord> = sqlx::query_as(
+    let mut records: Vec<BillingRecord> = sqlx::query_as(
         "SELECT id, record_type, previous_hash, hash, generated_at
          FROM billing_records WHERE invoice_id = $1 ORDER BY id",
     )
     .bind(invoice_id)
     .fetch_all(pool)
     .await?;
+    let results = submission::record_results(pool, issuer_nif).await?;
+    for record in &mut records {
+        record.aeat = Some(results.get(&record.id).cloned().unwrap_or(RecordResult {
+            state: RecordState::Pending,
+            error_code: None,
+            error_description: None,
+        }));
+    }
 
     Ok(InvoiceDetail {
         cancelled: records.iter().any(|r| r.record_type == "cancellation"),

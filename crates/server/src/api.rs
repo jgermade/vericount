@@ -2,10 +2,14 @@
 
 use axum::{
     extract::{rejection::JsonRejection, Path, State},
-    http::StatusCode,
+    http::{
+        header::{SET_COOKIE, USER_AGENT},
+        HeaderMap, StatusCode,
+    },
+    middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::{Europe::Madrid, Tz};
@@ -17,18 +21,32 @@ use vericounts_core::{
 };
 
 use crate::{
+    auth::{self, CurrentUser, LoginError},
     store::{self, ChainReport, InvoiceDetail, InvoiceSummary, NewInvoice, StoreError},
+    submission::{self, QueueStatus, RunOutcome},
     AppState,
 };
 
-pub fn router() -> Router<AppState> {
-    Router::new()
+pub fn router(state: AppState) -> Router<AppState> {
+    let protected = Router::new()
         .route("/invoices", get(list_invoices).post(create_invoice))
         .route("/invoices/preview", post(preview_invoice))
         .route("/invoices/{id}", get(get_invoice))
         .route("/invoices/{id}/cancellation", post(cancel_invoice))
         .route("/chain/verification", get(verify_chain))
+        .route("/aeat", get(aeat_status))
+        .route("/aeat/submissions", post(submit_now))
         .fallback(|| async { ApiError::new(StatusCode::NOT_FOUND, "not_found", "not found") })
+        .layer(middleware::from_fn_with_state(state, auth::require_session));
+    Router::new()
+        .route(
+            "/session",
+            get(current_session)
+                .post(open_session)
+                .delete(close_session),
+        )
+        .merge(protected)
+        .layer(middleware::from_fn(auth::csrf))
 }
 
 /// Current time in Spain, which is what Veri*factu records carry.
@@ -45,7 +63,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+    pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
             code,
@@ -200,11 +218,19 @@ async fn preview_invoice(
 
 async fn create_invoice(
     State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
     body: Result<Json<CreateInvoice>, JsonRejection>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), ApiError> {
     let Json(body) = body?;
     let new = body.validate()?;
     let id = store::create_invoice(&state.pool, &state.config.issuer, &new, now()).await?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "invoice.issued",
+        &id.to_string(),
+    )
+    .await;
     Ok((
         StatusCode::CREATED,
         Json(invoice_response(&state, id).await?),
@@ -228,9 +254,17 @@ async fn get_invoice(
 
 async fn cancel_invoice(
     State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<InvoiceResponse>, ApiError> {
     store::cancel_invoice(&state.pool, &state.config.issuer, id, now()).await?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "invoice.cancelled",
+        &id.to_string(),
+    )
+    .await;
     Ok(Json(invoice_response(&state, id).await?))
 }
 
@@ -238,4 +272,124 @@ async fn verify_chain(State(state): State<AppState>) -> Result<Json<ChainReport>
     Ok(Json(
         store::verify_chain(&state.pool, &state.config.issuer.nif).await?,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Credentials {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct SessionResponse {
+    username: String,
+}
+
+async fn open_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Result<Json<Credentials>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let Json(credentials) = body?;
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    match auth::login(
+        &state,
+        &credentials.username,
+        &credentials.password,
+        user_agent,
+    )
+    .await
+    {
+        Ok(token) => Ok((
+            StatusCode::CREATED,
+            [(SET_COOKIE, auth::session_cookie(Some(&token)))],
+            Json(SessionResponse {
+                username: credentials.username.trim().to_lowercase(),
+            }),
+        )
+            .into_response()),
+        Err(LoginError::InvalidCredentials) => Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "wrong username or password",
+        )),
+        Err(LoginError::TooManyAttempts) => Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too_many_attempts",
+            "too many failed attempts, try again in a few minutes",
+        )),
+        Err(LoginError::Internal) => Err(ApiError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            "internal error",
+        )),
+    }
+}
+
+async fn current_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<SessionResponse>, ApiError> {
+    match auth::authenticate(&state.pool, &headers).await {
+        Some(user) => Ok(Json(SessionResponse {
+            username: user.username,
+        })),
+        None => Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "sign in to continue",
+        )),
+    }
+}
+
+async fn close_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if let Some(user) = auth::authenticate(&state.pool, &headers).await {
+        if let Err(error) = auth::revoke_session(&state.pool, user.session_id).await {
+            eprintln!("database error: {error}");
+        }
+        auth::log_event(&state.pool, Some(user.id), "session.closed", "").await;
+    }
+    (
+        StatusCode::NO_CONTENT,
+        [(SET_COOKIE, auth::session_cookie(None))],
+    )
+        .into_response()
+}
+
+async fn aeat_status(State(state): State<AppState>) -> Result<Json<QueueStatus>, ApiError> {
+    Ok(Json(
+        submission::queue_status(
+            &state.pool,
+            &state.config.issuer.nif,
+            state.submitter.is_some(),
+        )
+        .await?,
+    ))
+}
+
+/// Sends the pending records now instead of waiting for the next run.
+async fn submit_now(
+    State(state): State<AppState>,
+    Extension(user): Extension<CurrentUser>,
+) -> Result<Json<RunOutcome>, ApiError> {
+    let Some(submitter) = &state.submitter else {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "aeat_disabled",
+            "sending records to the AEAT is not enabled",
+        ));
+    };
+    let outcome = submission::run_once(&state.pool, &state.config.issuer, submitter).await?;
+    auth::log_event(
+        &state.pool,
+        Some(user.id),
+        "aeat.submission_requested",
+        &format!("{outcome:?}"),
+    )
+    .await;
+    Ok(Json(outcome))
 }

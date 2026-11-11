@@ -2,9 +2,11 @@
 
 pub mod aeat_client;
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod security;
 pub mod store;
+pub mod submission;
 
 use std::{path::Path, sync::Arc};
 
@@ -22,6 +24,9 @@ pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
 pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
+    pub throttle: Arc<auth::LoginThrottle>,
+    /// Present when sending records to the AEAT is enabled.
+    pub submitter: Option<Arc<submission::Submitter>>,
 }
 
 /// Builds the application router.
@@ -32,7 +37,7 @@ pub struct AppState {
 pub fn app(state: AppState, web_dir: impl AsRef<Path>) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
-        .nest("/api", api::router())
+        .nest("/api", api::router(state.clone()))
         .fallback_service(ServeDir::new(web_dir))
         .layer(middleware::from_fn(security::headers))
         .with_state(state)

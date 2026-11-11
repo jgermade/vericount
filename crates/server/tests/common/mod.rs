@@ -4,7 +4,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use axum::{
     body::Body,
-    http::{header::CONTENT_TYPE, HeaderMap, Method, Request, StatusCode},
+    http::{
+        header::{CONTENT_TYPE, COOKIE},
+        HeaderMap, Method, Request, StatusCode,
+    },
     Router,
 };
 use http_body_util::BodyExt;
@@ -40,15 +43,53 @@ pub fn issuer() -> Issuer {
     }
 }
 
-pub fn app(pool: PgPool) -> Router {
-    let state = AppState {
+pub const USERNAME: &str = "tester";
+pub const PASSWORD: &str = "a long test password";
+
+/// Token of the session that `app` opens and `request` sends.
+const TEST_TOKEN: &str = "test-session-token";
+
+pub fn state(pool: PgPool) -> AppState {
+    AppState {
         pool,
         config: Arc::new(Config {
             issuer: issuer(),
             aeat_environment: AeatEnvironment::Test,
         }),
-    };
-    vericounts_server::app(state, web_dir())
+        throttle: Arc::default(),
+        submitter: None,
+    }
+}
+
+/// The application without any user or session.
+pub fn app_signed_out(pool: PgPool) -> Router {
+    vericounts_server::app(state(pool), web_dir())
+}
+
+/// Creates a user with an open session; `request` sends its cookie.
+pub async fn sign_in(pool: &PgPool) {
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash) VALUES ($1, 'unused') RETURNING id",
+    )
+    .bind(USERNAME)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO sessions (user_id, token_hash, expires_at)
+         VALUES ($1, $2, now() + interval '1 hour')",
+    )
+    .bind(user_id)
+    .bind(vericounts_server::auth::token_hash(TEST_TOKEN))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The application with a signed-in test user.
+pub async fn app(pool: PgPool) -> Router {
+    sign_in(&pool).await;
+    app_signed_out(pool)
 }
 
 pub struct TestResponse {
@@ -70,7 +111,11 @@ pub async fn request(
     path: &str,
     json: Option<Value>,
 ) -> TestResponse {
-    let builder = Request::builder().method(method).uri(path);
+    let builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(COOKIE, format!("__Host-session={TEST_TOKEN}"))
+        .header("x-csrf-protection", "1");
     let request = match json {
         Some(json) => builder
             .header(CONTENT_TYPE, "application/json")

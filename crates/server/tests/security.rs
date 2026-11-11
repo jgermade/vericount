@@ -12,9 +12,10 @@ use vericounts_server::security::CONTENT_SECURITY_POLICY_VALUE;
 /// These tests never reach the database, so the pool is never connected.
 async fn get(path: &str) -> (StatusCode, HeaderMap) {
     let pool = PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_millis(50))
         .connect_lazy("postgres://unused@127.0.0.1:1/unused")
         .unwrap();
-    let response = common::get(&common::app(pool), path).await;
+    let response = common::get(&common::app_signed_out(pool), path).await;
     (response.status, response.headers)
 }
 
@@ -56,7 +57,7 @@ async fn security_headers_are_set_on_every_response() {
         ("/healthz", StatusCode::OK),
         ("/app.js", StatusCode::OK),
         ("/does-not-exist", StatusCode::NOT_FOUND),
-        ("/api/does-not-exist", StatusCode::NOT_FOUND),
+        ("/api/does-not-exist", StatusCode::UNAUTHORIZED),
     ] {
         let (got, headers) = get(path).await;
         assert_eq!(got, status, "{path}");

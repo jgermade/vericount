@@ -35,7 +35,7 @@ fn today() -> chrono::NaiveDate {
 
 #[sqlx::test]
 async fn creates_invoices_with_chained_records(pool: PgPool) {
-    let app = common::app(pool);
+    let app = common::app(pool).await;
 
     let first = post(&app, "/api/invoices", invoice_body()).await;
     assert_eq!(first.status, StatusCode::CREATED, "{:?}", first.json());
@@ -111,7 +111,7 @@ async fn creates_invoices_with_chained_records(pool: PgPool) {
 
 #[sqlx::test]
 async fn preview_computes_totals_without_storing(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     let preview = post(&app, "/api/invoices/preview", invoice_body()).await;
     assert_eq!(preview.status, StatusCode::OK);
     let preview = preview.json();
@@ -133,7 +133,7 @@ async fn preview_computes_totals_without_storing(pool: PgPool) {
 
 #[sqlx::test]
 async fn cancellation_adds_a_record(pool: PgPool) {
-    let app = common::app(pool);
+    let app = common::app(pool).await;
     let invoice = post(&app, "/api/invoices", invoice_body()).await.json();
     let path = format!("/api/invoices/{}/cancellation", invoice["id"]);
 
@@ -174,7 +174,7 @@ async fn cancellation_adds_a_record(pool: PgPool) {
 
 #[sqlx::test]
 async fn invalid_invoices_are_rejected(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     let tomorrow = today().checked_add_days(Days::new(1)).unwrap().to_string();
     type Change = Box<dyn Fn(&mut Value)>;
     let cases: Vec<(&str, Change)> = vec![
@@ -249,7 +249,7 @@ async fn invalid_invoices_are_rejected(pool: PgPool) {
 
 #[sqlx::test]
 async fn concurrent_invoices_keep_one_chain(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     let mut tasks = Vec::new();
     for _ in 0..12 {
         let app = app.clone();
@@ -289,7 +289,7 @@ const TABLES: [(&str, &str); 4] = [
 
 #[sqlx::test]
 async fn tables_are_insert_only_even_for_the_owner(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     post(&app, "/api/invoices", invoice_body()).await;
 
     for (table, update) in TABLES {
@@ -329,7 +329,7 @@ async fn application_role_can_only_read_and_insert(
         .connect_with(connect_options)
         .await
         .unwrap();
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
 
     let invoice = post(&app, "/api/invoices", invoice_body()).await;
     assert_eq!(invoice.status, StatusCode::CREATED, "{:?}", invoice.json());
@@ -366,7 +366,7 @@ async fn application_role_can_only_read_and_insert(
 /// reports the first broken record.
 #[sqlx::test]
 async fn verification_detects_tampering(pool: PgPool) {
-    let app = common::app(pool.clone());
+    let app = common::app(pool.clone()).await;
     for _ in 0..3 {
         post(&app, "/api/invoices", invoice_body()).await;
     }

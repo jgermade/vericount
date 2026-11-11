@@ -93,6 +93,45 @@ pub fn aeat_endpoint(
     }
 }
 
+/// Settings for sending records to the AEAT. Sending is off unless
+/// `VERICOUNTS_AEAT_SUBMIT=1`.
+#[derive(Debug, Clone)]
+pub struct Submission {
+    pub endpoint: String,
+    /// Path of a PEM file with the client certificate and its key.
+    pub identity_pem_path: Option<String>,
+    pub producer_name: String,
+    pub producer_nif: String,
+    pub installation_number: String,
+}
+
+impl Submission {
+    pub fn from_env(environment: AeatEnvironment) -> Result<Option<Self>, String> {
+        if env::var("VERICOUNTS_AEAT_SUBMIT").as_deref() != Ok("1") {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            endpoint: aeat_endpoint(
+                environment,
+                env::var("VERICOUNTS_AEAT_ENDPOINT").ok().as_deref(),
+            )?,
+            identity_pem_path: env::var("VERICOUNTS_AEAT_IDENTITY_PEM").ok(),
+            producer_name: invoice::validate_text(
+                "VERICOUNTS_SOFTWARE_PRODUCER_NAME",
+                &required("VERICOUNTS_SOFTWARE_PRODUCER_NAME")?,
+            )
+            .map_err(|e| e.to_string())?,
+            producer_nif: invoice::validate_tax_id(
+                "VERICOUNTS_SOFTWARE_PRODUCER_NIF",
+                &required("VERICOUNTS_SOFTWARE_PRODUCER_NIF")?,
+            )
+            .map_err(|e| e.to_string())?,
+            installation_number: env::var("VERICOUNTS_INSTALLATION_NUMBER")
+                .unwrap_or_else(|_| "1".to_owned()),
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
