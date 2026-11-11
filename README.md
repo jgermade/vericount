@@ -71,7 +71,20 @@ Run **Actions → Release → Run workflow** on `main` and choose `patch`, `mino
 
 ## Development
 
-Requires Rust (pinned in `rust-toolchain.toml`), Node 22 and PostgreSQL 16.
+Requires Rust (pinned in `rust-toolchain.toml`), Node 22 and PostgreSQL 16. With Docker, the [`Makefile`](Makefile) runs PostgreSQL and Mailpit for you ([`docker-compose.dev.yml`](docker-compose.dev.yml), on `127.0.0.1` with fixed development passwords):
+
+| Command | What it does |
+|---|---|
+| `make up` | Starts PostgreSQL and Mailpit, migrates, then runs the AEAT mock, the server and the client with hot reload until Ctrl+C. Open `http://localhost:5173`; mail, sign-in codes included, is at `http://127.0.0.1:8025`. Records are sent to the mock |
+| `make invite EMAIL=you@example.com` | Invites a user, who signs up with the code sent to Mailpit |
+| `make test` | Builds the client and runs the tests against that PostgreSQL and Mailpit |
+| `make build` | Builds the client (`web/dist`) and the release server (`target/release/vericount-server`) |
+| `make lint` | `cargo fmt --check`, clippy, and shellcheck and `helm lint` if installed; `make check` runs it and the tests |
+| `make down` / `make reset` | Stops the services / also deletes the development database |
+
+The ports can be changed, e.g. `make up DEV_DB_PORT=5434` (also `DEV_WEB_PORT`, `DEV_SERVER_PORT`, `DEV_AEAT_PORT`, `DEV_SMTP_PORT`, `DEV_MAILPIT_PORT`).
+
+Without the Makefile:
 
 ```bash
 # Web client (output in web/dist)
